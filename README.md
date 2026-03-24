@@ -1,89 +1,115 @@
 # LogSnap
 
-LogSnap is a mobile-first job logging assistant designed for field workers (electricians, fire protection, technicians). It simplifies job reporting by automatically capturing timestamps, location, and job activity, reducing manual input and improving accuracy.
+LogSnap is an Expo-based React Native app with a small local Express backend for job logging flows.
 
-## 🚀 Overview
+## Requirements
 
-Field workers often spend extra time manually logging:
-- Start and end times  
-- Job descriptions  
-- Photos of work completed  
+- Node.js 18+
+- npm
+- Expo Go or an iOS/Android simulator
 
-LogSnap streamlines this by turning job logging into a one-tap workflow, with optional automation based on location and time.
+## Install
 
-## ✨ Key Features
+```bash
+npm install
+```
 
-### 📍 Smart Job Detection
-- Detects when a worker is near a job site (~50–100m radius)
-- Triggers a notification when a scheduled job is nearby
-- Prevents accidental triggers if not within range
+## Run The App
 
-### ▶️ One-Tap Job Start
-- "Start Job" button when arriving on site
-- Automatically logs:
-  - Start time
-  - Location
-  - Job reference
+Start the Expo frontend from the repo root:
 
-### 📸 Automatic Activity Logging
-- Capture photos during the job
-- Each photo is automatically timestamped and attached to the report
-- Reduces need for manual notes
+```bash
+npm start
+```
 
-### ⏱️ Job Completion Tracking
-- "Complete Job" button to finish session
-- Logs:
-  - End time
-  - Duration
-  - Completion status
+Other frontend commands:
 
-### 📝 Report Generation
-- Auto-generates a structured job report including:
-  - Timeline (start → end)
-  - Photos
-  - Notes (optional)
-- Ready for submission to platforms like Jobber
+```bash
+npm run ios
+npm run android
+npm run web
+```
 
-### 🔔 Notifications (Optional)
-- Job start reminders
-- Missed job alerts
-- Progress check-ins
+## Run The Backend
 
-## 🧠 How It Works
+Start the local API:
 
-### Current Workflow (Without LogSnap)
-1. Arrive at job site  
-2. Manually open Jobber  
-3. Enter start time  
-4. Take photos manually  
-5. Write description  
-6. Enter end time  
-7. Submit report  
+```bash
+npm run backend
+```
 
-### LogSnap Workflow
-1. Worker approaches job site  
-2. Receives notification: "You're near your job"  
-3. Taps **Start Job**  
-4. Works normally (photos auto-logged)  
-5. Taps **Complete Job**  
-6. Report is generated automatically  
+Watch mode:
 
-## 🛠️ Tech Stack (MVP)
+```bash
+npm run backend:dev
+```
 
-**Frontend**
-- React Native (Expo)
-- TypeScript
+Default API base URL:
 
-**Backend**
-- Node.js + Express
-- REST API
+```text
+http://localhost:4000
+```
 
-**Database**
-- PostgreSQL (or MySQL for early MVP)
+Health check:
 
-**Services**
-- GPS / Geofencing APIs
-- Cloud Storage (AWS S3 / Supabase)
-- Push Notifications (Firebase)
+```bash
+curl http://localhost:4000/api/health
+```
 
-## 📦 Project Structure
+## Run Both
+
+Use two terminals from the repo root.
+
+Terminal 1:
+
+```bash
+npm run backend
+```
+
+Terminal 2:
+
+```bash
+npm start
+```
+
+## Available API Endpoints
+
+- `GET /api/health`
+- `GET /api/jobs`
+- `GET /api/jobs/:jobId`
+- `POST /api/jobs/:jobId/start`
+- `POST /api/jobs/:jobId/notes`
+- `POST /api/jobs/:jobId/photos`
+- `PATCH /api/jobs/:jobId/checklist`
+- `POST /api/jobs/:jobId/review`
+- `POST /api/jobs/:jobId/submit`
+
+## Project Structure
+
+```text
+.
+├── App.tsx
+├── index.js
+├── src
+│   ├── App.tsx
+│   ├── index.js
+│   ├── backend
+│   │   ├── server.ts
+│   │   ├── store.ts
+│   │   └── types.ts
+│   └── frontend
+│       ├── JobsListScreen.tsx
+│       ├── JobDetailScreen.tsx
+│       ├── ActiveJobScreen.tsx
+│       ├── VoiceNoteScreen.tsx
+│       ├── PhotoCaptureScreen.tsx
+│       ├── ReviewReportScreen.tsx
+│       └── SuccessScreen.tsx
+└── package.json
+```
+
+## Notes
+
+- The frontend currently contains screen implementations and navigation wiring.
+- The backend currently uses an in-memory store, not a database.
+- If Expo is launched from `src/` by your IDE, the `src/package.json` shim is present to avoid the missing `src/package.json` error.

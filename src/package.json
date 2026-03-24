@@ -1,0 +1,5 @@
+{
+  "name": "logsnap-src",
+  "private": true,
+  "main": "index.js"
+}

@@ -494,18 +494,6 @@ export default function VoiceNoteScreen() {
 }
 
 function createRecorderAdapter(): RecorderAdapter {
-  const expoAv = safeRequire('expo-av');
-
-  if (expoAv?.Audio?.Recording) {
-    return createExpoRecorderAdapter(expoAv.Audio);
-  }
-
-  const audioRecorderPlayerModule = safeRequire('react-native-audio-recorder-player');
-
-  if (audioRecorderPlayerModule) {
-    return createAudioRecorderPlayerAdapter(audioRecorderPlayerModule);
-  }
-
   return createMockRecorderAdapter();
 }
 
@@ -576,14 +564,6 @@ function createMockRecorderAdapter(): RecorderAdapter {
     start: async () => undefined,
     stop: async () => `mock://voice-note-${Date.now()}.m4a`,
   };
-}
-
-function safeRequire(moduleName: string): any {
-  try {
-    return require(moduleName);
-  } catch {
-    return null;
-  }
 }
 
 function formatDisplayTime(totalSeconds: number) {

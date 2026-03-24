@@ -32,20 +32,6 @@ type RootStackParamList = {
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'PhotoCapture'>;
 type PhotoCaptureRoute = RouteProp<RootStackParamList, 'PhotoCapture'>;
 
-type VisionCameraModule = {
-  Camera: any;
-  useCameraDevice?: (position: 'back' | 'front') => any;
-};
-
-type LegacyCameraModule = {
-  RNCamera: any;
-  Constants?: {
-    Type?: {
-      back?: string;
-    };
-  };
-};
-
 const SCREEN_BACKGROUND = '#111111';
 const HEADER_BORDER = 'rgba(255,255,255,0.1)';
 const MUTED_TEXT = 'rgba(255,255,255,0.7)';
@@ -57,8 +43,6 @@ const TAG_COLORS: Record<PhotoTag, string> = {
   After: '#D85A30',
 };
 const TAGS: PhotoTag[] = ['Before', 'During', 'After'];
-const VISION_CAMERA = safeRequire('react-native-vision-camera') as VisionCameraModule | null;
-const LEGACY_CAMERA = safeRequire('react-native-camera') as LegacyCameraModule | null;
 
 export default function PhotoCaptureScreen() {
   const navigation = useNavigation<Navigation>();
@@ -68,7 +52,6 @@ export default function PhotoCaptureScreen() {
   const [cameraAllowed, setCameraAllowed] = useState<boolean | null>(null);
   const [capturedPhotos, setCapturedPhotos] = useState<CapturedPhoto[]>([]);
   const [activeTag, setActiveTag] = useState<PhotoTag>('Before');
-  const backDevice = VISION_CAMERA?.useCameraDevice?.('back') ?? null;
 
   useEffect(() => {
     let mounted = true;
@@ -162,7 +145,7 @@ export default function PhotoCaptureScreen() {
         ) : (
           <>
             <View style={styles.viewfinder}>
-              <CameraView cameraRef={cameraRef} device={backDevice} />
+              <CameraView />
               <CornerBrackets />
               <Animated.View
                 pointerEvents="none"
@@ -265,43 +248,11 @@ export default function PhotoCaptureScreen() {
   );
 }
 
-function CameraView({
-  cameraRef,
-  device,
-}: {
-  cameraRef: React.RefObject<any>;
-  device: any;
-}) {
-  if (VISION_CAMERA?.Camera && device) {
-    const VisionCameraComponent = VISION_CAMERA.Camera;
-
-    return (
-      <VisionCameraComponent
-        device={device}
-        isActive
-        photo
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-      />
-    );
-  }
-
-  if (LEGACY_CAMERA?.RNCamera) {
-    const LegacyCameraComponent = LEGACY_CAMERA.RNCamera;
-
-    return (
-      <LegacyCameraComponent
-        captureAudio={false}
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-        type={LEGACY_CAMERA.Constants?.Type?.back ?? 'back'}
-      />
-    );
-  }
-
+function CameraView() {
   return (
     <View style={styles.permissionFallback}>
-      <Text style={styles.permissionText}>Camera unavailable in this environment</Text>
+      <Text style={styles.permissionText}>Camera preview unavailable in Expo Go</Text>
+      <Text style={styles.permissionSubtext}>You can still add mock photos to continue the flow.</Text>
     </View>
   );
 }
@@ -350,11 +301,6 @@ function BracketCorner({
 }
 
 async function requestCameraAccess() {
-  if (VISION_CAMERA?.Camera?.requestCameraPermission) {
-    const status = await VISION_CAMERA.Camera.requestCameraPermission();
-    return status === 'granted';
-  }
-
   if (Platform.OS === 'android') {
     const result = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.CAMERA,
@@ -367,38 +313,13 @@ async function requestCameraAccess() {
 }
 
 async function takePhoto(cameraInstance: any) {
-  if (VISION_CAMERA?.Camera && cameraInstance?.takePhoto) {
-    const photo = await cameraInstance.takePhoto({ flash: 'off' });
-    return photo?.path ? ensureFileUri(photo.path) : null;
-  }
-
-  if (LEGACY_CAMERA?.RNCamera && cameraInstance?.takePictureAsync) {
-    const photo = await cameraInstance.takePictureAsync();
-    return photo?.uri ?? null;
-  }
-
+  void cameraInstance;
   return `mock://capture-${Date.now()}.jpg`;
 }
 
 function getNextTag(currentTag: PhotoTag): PhotoTag {
   const currentIndex = TAGS.indexOf(currentTag);
   return TAGS[(currentIndex + 1) % TAGS.length];
-}
-
-function ensureFileUri(path: string) {
-  if (path.startsWith('file://') || path.startsWith('content://')) {
-    return path;
-  }
-
-  return `file://${path}`;
-}
-
-function safeRequire(moduleName: string) {
-  try {
-    return require(moduleName);
-  } catch {
-    return null;
-  }
 }
 
 const styles = StyleSheet.create({
@@ -446,6 +367,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
+  },
+  permissionSubtext: {
+    color: MUTED_TEXT,
+    fontSize: 13,
+    marginTop: 8,
+    paddingHorizontal: 24,
     textAlign: 'center',
   },
   flashOverlay: {

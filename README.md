@@ -104,15 +104,28 @@ cd logsnap
 ```
 ### 2. Install dependencies
 
+```bash
 npm install
-cd src/backend && npm install
+```
 
 ### 3. Run the app
-# backend
-npm run backend
 
-# mobile
-npx expo start
+```bash
+# mobile on a physical device via Expo Go
+npm run start:clear
+```
+
+```bash
+# mobile on the iOS simulator on this Mac
+npm run start:local
+```
+
+```bash
+# backend API
+npm run backend
+```
+
+If Expo Go shows `could not connect to the server`, stop Metro and try `npm run start:clear` first.
 
 ### 🧪 MVP Testing Strategy
 

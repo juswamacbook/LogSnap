@@ -1,6 +1,6 @@
 # LogSnap
 
-LogSnap is an Expo-based React Native app with a small local Express backend for a focused field-worker job flow centered on passive work tracking and simple proof-of-work reports.
+LogSnap is an app with a small local Express backend for a focused field-worker job flow centered on passive work tracking and simple proof-of-work reports.
 
 ## MVP Workflow
 

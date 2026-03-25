@@ -15,25 +15,15 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled';
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-  phone: string;
-  contactName: string;
-  issue: string;
-};
+import { useJobSession } from './JobSessionContext';
+import { JobStatus } from './jobData';
 
 type RootStackParamList = {
   JobsList: undefined;
   JobDetail: { jobId: string };
-  ActiveJob: { jobId: string; startTime: number };
+  ActiveJob: { jobId: string };
+  PhotoCapture: { jobId: string };
+  Success: { jobId: string };
 };
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'JobDetail'>;
@@ -42,6 +32,7 @@ type JobDetailRoute = RouteProp<RootStackParamList, 'JobDetail'>;
 type ThemeColors = {
   background: string;
   surface: string;
+  surfaceSecondary: string;
   textPrimary: string;
   textSecondary: string;
   textHint: string;
@@ -49,91 +40,92 @@ type ThemeColors = {
   actionPrimary: string;
   actionText: string;
   linkPrimary: string;
+  accentBackground: string;
+  accentText: string;
 };
 
 const BACK_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
-
-type InfoRowProps = {
-  label: string;
-  value: string;
-  multiline?: boolean;
-  colors: ThemeColors;
-};
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
     background: '#FFFFFF',
     surface: '#FFFFFF',
+    surfaceSecondary: '#F4F6F8',
     textPrimary: '#111111',
     textSecondary: '#6B6B6B',
-    textHint: '#AAAAAA',
+    textHint: '#8E8E93',
     borderSecondary: 'rgba(0,0,0,0.15)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
     linkPrimary: '#185FA5',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
   },
   dark: {
     background: '#111111',
     surface: '#1C1C1E',
+    surfaceSecondary: '#262629',
     textPrimary: '#F5F5F5',
     textSecondary: '#999999',
     textHint: '#666666',
     borderSecondary: 'rgba(255,255,255,0.12)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    linkPrimary: '#185FA5',
+    linkPrimary: '#8CB8E8',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
   },
 };
 
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-    contactName: 'Ron Fielding',
-    phone: '(416) 555-0188',
-    issue:
-      'Zone 3 not activating. Possible solenoid failure or broken line near south bed.',
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-    contactName: 'Elena Torres',
-    phone: '(416) 555-0142',
-    issue:
-      'Annual backflow inspection required after a failed valve reading last service cycle.',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-    contactName: 'Marcus Chen',
-    phone: '(416) 555-0176',
-    issue:
-      'Resident reported uneven coverage along the east lawn. Inspect heads, pressure, and timer programming.',
-  },
-];
+function getWorkflowCopy(status: JobStatus) {
+  switch (status) {
+    case 'in_progress':
+      return {
+        badge: 'Active Session',
+        body: 'The timer is already running. Keep working, then finish the job when the site is ready for final photos.',
+        cta: 'Resume Job',
+      };
+    case 'awaiting_completion_upload':
+      return {
+        badge: 'Ready For Proof',
+        body: 'The work session is closed. Add 1 to 3 final photos and generate the simple report.',
+        cta: 'Add Final Photos',
+      };
+    case 'completed':
+      return {
+        badge: 'Report Ready',
+        body: 'This stop already has a completed proof-of-work report. Review the report or head to the next job.',
+        cta: 'View Report',
+      };
+    case 'not_started':
+    default:
+      return {
+        badge: 'One-Tap Start',
+        body: 'Keep admin work out of the way. Start the job, let the timer run passively, then finish with final photos only.',
+        cta: 'Start Job',
+      };
+  }
+}
 
-function InfoRow({ label, value, multiline = false, colors }: InfoRowProps) {
+function InfoRow({
+  label,
+  value,
+  multiline = false,
+  theme,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+  theme: ThemeColors;
+}) {
   return (
-    <View style={[styles.infoRow, { borderBottomColor: colors.borderSecondary }]}>
-      <Text style={[styles.infoLabel, { color: colors.textHint }]}>{label}</Text>
+    <View style={[styles.infoRow, { borderBottomColor: theme.borderSecondary }]}>
+      <Text style={[styles.infoLabel, { color: theme.textHint }]}>{label}</Text>
       <Text
         style={[
           styles.infoValue,
           multiline ? styles.infoValueMultiline : styles.infoValueSingleLine,
-          { color: colors.textPrimary },
+          { color: theme.textPrimary },
         ]}
       >
         {value}
@@ -146,14 +138,15 @@ export default function JobDetailScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<JobDetailRoute>();
   const insets = useSafeAreaInsets();
+  const { getRecord, startJob } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const job = JOBS.find((item) => item.id === route.params.jobId);
+  const record = getRecord(route.params.jobId);
   const statusBarStyle = colorScheme === 'dark' ? 'light-content' : 'dark-content';
 
-  if (!job) {
+  if (!record) {
     return (
       <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
         <StatusBar
@@ -165,6 +158,9 @@ export default function JobDetailScreen() {
       </SafeAreaView>
     );
   }
+
+  const { job } = record;
+  const workflowCopy = getWorkflowCopy(job.status);
 
   const handleCallContact = () => {
     const phoneDigits = job.phone.replace(/[^\d+]/g, '');
@@ -181,8 +177,24 @@ export default function JobDetailScreen() {
     Linking.openURL(mapsUrl);
   };
 
-  const handleStartJob = () => {
-    navigation.navigate('ActiveJob', { jobId: job.id, startTime: Date.now() });
+  const handlePrimaryAction = () => {
+    if (job.status === 'in_progress') {
+      navigation.navigate('ActiveJob', { jobId: job.id });
+      return;
+    }
+
+    if (job.status === 'awaiting_completion_upload') {
+      navigation.navigate('PhotoCapture', { jobId: job.id });
+      return;
+    }
+
+    if (job.status === 'completed') {
+      navigation.navigate('Success', { jobId: job.id });
+      return;
+    }
+
+    startJob(job.id);
+    navigation.navigate('ActiveJob', { jobId: job.id });
   };
 
   return (
@@ -225,21 +237,50 @@ export default function JobDetailScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: 140 + insets.bottom },
-        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 156 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
-        <InfoRow colors={theme} label="ADDRESS" value={job.address} />
-        <InfoRow colors={theme} label="SCHEDULED WINDOW" value={job.timeWindow} />
-        <InfoRow colors={theme} label="JOB TYPE" value={job.jobType} />
-        <InfoRow colors={theme} label="ISSUE SUMMARY" multiline value={job.issue} />
-        <InfoRow
-          colors={theme}
-          label="CONTACT"
-          value={`${job.contactName} • ${job.phone}`}
-        />
+        <View
+          style={[
+            styles.workflowCard,
+            {
+              backgroundColor: theme.surfaceSecondary,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <View style={[styles.workflowBadge, { backgroundColor: theme.accentBackground }]}>
+            <Text style={[styles.workflowBadgeText, { color: theme.accentText }]}>
+              {workflowCopy.badge}
+            </Text>
+          </View>
+          <Text style={[styles.workflowTitle, { color: theme.textPrimary }]}>
+            Start Job {'\u2192'} Finish Job {'\u2192'} Final Photos {'\u2192'} Report
+          </Text>
+          <Text style={[styles.workflowBody, { color: theme.textSecondary }]}>
+            {workflowCopy.body}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <InfoRow label="ADDRESS" theme={theme} value={job.address} />
+          <InfoRow label="SCHEDULED WINDOW" theme={theme} value={job.timeWindow} />
+          <InfoRow label="JOB TYPE" theme={theme} value={job.jobType} />
+          <InfoRow label="ISSUE SUMMARY" multiline theme={theme} value={job.issue} />
+          <InfoRow
+            label="CONTACT"
+            theme={theme}
+            value={`${job.contactName} • ${job.phone}`}
+          />
+        </View>
       </ScrollView>
 
       <View
@@ -291,7 +332,7 @@ export default function JobDetailScreen() {
 
         <Pressable
           accessibilityRole="button"
-          onPress={handleStartJob}
+          onPress={handlePrimaryAction}
           style={({ pressed }) => [
             styles.primaryButton,
             {
@@ -301,7 +342,7 @@ export default function JobDetailScreen() {
           ]}
         >
           <Text style={[styles.primaryButtonText, { color: theme.actionText }]}>
-            Start Job
+            {workflowCopy.cta}
           </Text>
         </Pressable>
       </View>
@@ -320,85 +361,128 @@ const styles = StyleSheet.create({
   },
   notFoundText: {
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '600',
   },
   navBar: {
-    borderBottomWidth: 0.5,
-    paddingBottom: 10,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
     paddingHorizontal: 16,
   },
   backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
+    minWidth: 56,
+    paddingVertical: 4,
   },
   backButtonText: {
-    fontSize: 14,
-    fontWeight: '400',
+    fontSize: 16,
+    fontWeight: '600',
   },
   navTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    lineHeight: 24,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  infoRow: {
-    borderBottomWidth: 0.5,
-    paddingVertical: 10,
-  },
-  infoLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.55,
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 15,
-    fontWeight: '400',
-  },
-  infoValueSingleLine: {
-    lineHeight: 20,
-  },
-  infoValueMultiline: {
-    lineHeight: 22,
-  },
-  ctaBar: {
-    borderTopWidth: 0.5,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  secondaryRow: {
-    flexDirection: 'row',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 0.5,
     flex: 1,
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  secondaryButtonTrailing: {
-    marginLeft: 8,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  primaryButton: {
-    borderRadius: 12,
-    marginTop: 8,
-    paddingVertical: 16,
-    width: '100%',
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 17,
+    fontWeight: '700',
+    marginRight: 56,
     textAlign: 'center',
   },
   pressed: {
-    opacity: 0.92,
+    opacity: 0.72,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  workflowCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginBottom: 18,
+    padding: 18,
+  },
+  workflowBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    marginBottom: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  workflowBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  workflowTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+  workflowBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 10,
+  },
+  infoCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  infoRow: {
+    borderBottomWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  infoValue: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  infoValueSingleLine: {
+    minHeight: 20,
+  },
+  infoValueMultiline: {
+    minHeight: 66,
+  },
+  ctaBar: {
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    position: 'absolute',
+    right: 0,
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 50,
+    paddingHorizontal: 16,
+  },
+  secondaryButtonTrailing: {
+    marginLeft: 10,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    alignItems: 'center',
+    borderRadius: 18,
+    justifyContent: 'center',
+    minHeight: 56,
+  },
+  primaryButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

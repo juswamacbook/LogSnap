@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Appearance,
+  Image,
   Pressable,
   ScrollView,
   StatusBar,
@@ -13,33 +14,13 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled';
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-  phone: string;
-  contactName: string;
-  issue: string;
-  zoneLabel: string;
-};
-
-type ChecklistState = {
-  beforePhoto: boolean;
-  issueNoted: boolean;
-  afterPhoto: boolean;
-};
+import { useJobSession } from './JobSessionContext';
+import { formatElapsedDuration, REFERENCE_IMAGE_URI } from './jobData';
 
 type RootStackParamList = {
-  ActiveJob: { jobId: string; startTime: number };
-  VoiceNote: { jobId: string; mode?: 'text' };
+  ActiveJob: { jobId: string };
+  VoiceNote: { jobId: string; mode?: 'voice' | 'text' };
   PhotoCapture: { jobId: string };
-  ReviewReport: { jobId: string; startTime: number };
 };
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'ActiveJob'>;
@@ -57,110 +38,11 @@ type ThemeColors = {
   timerLabel: string;
   timerText: string;
   timerMeta: string;
-  timerSubtle: string;
-  promptBackground: string;
-  promptText: string;
-  voiceNoteBackground: string;
-  voiceNoteBorder: string;
-  voiceNoteText: string;
-  finishBackground: string;
-  finishBorder: string;
-  finishText: string;
   actionPrimary: string;
   actionText: string;
-  checklistDone: string;
-  checklistCheckmark: string;
-  missingBackground: string;
-  missingText: string;
-  thumbBackground: string;
+  pillBackground: string;
+  pillText: string;
 };
-
-type SectionHeaderProps = {
-  colors: ThemeColors;
-  label: string;
-};
-
-type ActionButtonProps = {
-  colors: ThemeColors;
-  label: string;
-  icon: string;
-  onPress: () => void;
-  variant?: 'default' | 'voice' | 'finish';
-  fullWidth?: boolean;
-  vertical?: boolean;
-  trailing?: boolean;
-};
-
-type CheckItemProps = {
-  colors: ThemeColors;
-  label: string;
-  done: boolean;
-  missing?: boolean;
-};
-
-type FeedItemProps = {
-  colors: ThemeColors;
-  icon: string;
-  text: string;
-  time: string;
-  hasThumb?: boolean;
-};
-
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-    contactName: 'Ron Fielding',
-    phone: '(416) 555-0188',
-    issue:
-      'Zone 3 not activating. Possible solenoid failure or broken line near south bed.',
-    zoneLabel: 'Zone 3',
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-    contactName: 'Elena Torres',
-    phone: '(416) 555-0142',
-    issue:
-      'Annual backflow inspection required after a failed valve reading last service cycle.',
-    zoneLabel: 'Main Valve',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-    contactName: 'Marcus Chen',
-    phone: '(416) 555-0176',
-    issue:
-      'Resident reported uneven coverage along the east lawn. Inspect heads, pressure, and timer programming.',
-    zoneLabel: 'East Lawn',
-  },
-];
-
-const FEED_ITEMS = [
-  {
-    icon: '🎙',
-    text: 'Voice note — "Zone 3 solenoid looks burned out, replacing now"',
-    time: '10:09 AM · 0:18',
-  },
-  {
-    icon: '▶',
-    text: 'Job started',
-    time: '10:07 AM',
-  },
-];
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
@@ -169,254 +51,81 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     surfaceSecondary: '#F4F6F8',
     textPrimary: '#111111',
     textSecondary: '#6B6B6B',
-    textHint: '#AAAAAA',
-    borderSecondary: 'rgba(0,0,0,0.15)',
+    textHint: '#8E8E93',
+    borderSecondary: 'rgba(0,0,0,0.12)',
     timerBackground: '#0F2D54',
-    timerLabel: 'rgba(255,255,255,0.6)',
+    timerLabel: 'rgba(255,255,255,0.64)',
     timerText: '#FFFFFF',
-    timerMeta: 'rgba(255,255,255,0.7)',
-    timerSubtle: 'rgba(255,255,255,0.4)',
-    promptBackground: '#FAEEDA',
-    promptText: '#633806',
-    voiceNoteBackground: '#E6F1FB',
-    voiceNoteBorder: '#185FA5',
-    voiceNoteText: '#0C447C',
-    finishBackground: '#FCEBEB',
-    finishBorder: '#F09595',
-    finishText: '#A32D2D',
+    timerMeta: 'rgba(255,255,255,0.76)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    checklistDone: '#1D9E75',
-    checklistCheckmark: '#FFFFFF',
-    missingBackground: '#FAEEDA',
-    missingText: '#633806',
-    thumbBackground: '#B5D4F4',
+    pillBackground: '#EAF3DE',
+    pillText: '#3B6D11',
   },
   dark: {
     background: '#111111',
     surface: '#1C1C1E',
     surfaceSecondary: '#262629',
     textPrimary: '#F5F5F5',
-    textSecondary: '#999999',
-    textHint: '#666666',
+    textSecondary: '#9A9AA0',
+    textHint: '#6B6B70',
     borderSecondary: 'rgba(255,255,255,0.12)',
     timerBackground: '#0F2D54',
-    timerLabel: 'rgba(255,255,255,0.6)',
+    timerLabel: 'rgba(255,255,255,0.64)',
     timerText: '#FFFFFF',
-    timerMeta: 'rgba(255,255,255,0.7)',
-    timerSubtle: 'rgba(255,255,255,0.4)',
-    promptBackground: '#FAEEDA',
-    promptText: '#633806',
-    voiceNoteBackground: '#E6F1FB',
-    voiceNoteBorder: '#185FA5',
-    voiceNoteText: '#0C447C',
-    finishBackground: '#FCEBEB',
-    finishBorder: '#F09595',
-    finishText: '#A32D2D',
+    timerMeta: 'rgba(255,255,255,0.76)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    checklistDone: '#1D9E75',
-    checklistCheckmark: '#FFFFFF',
-    missingBackground: '#FAEEDA',
-    missingText: '#633806',
-    thumbBackground: '#B5D4F4',
+    pillBackground: '#EAF3DE',
+    pillText: '#3B6D11',
   },
 };
-
-function SectionHeader({ colors, label }: SectionHeaderProps) {
-  return <Text style={[styles.sectionLabel, { color: colors.textHint }]}>{label}</Text>;
-}
-
-function ActionButton({
-  colors,
-  label,
-  icon,
-  onPress,
-  variant = 'default',
-  fullWidth = false,
-  vertical = false,
-  trailing = false,
-}: ActionButtonProps) {
-  const variantStyle =
-    variant === 'voice'
-      ? {
-          backgroundColor: colors.voiceNoteBackground,
-          borderColor: colors.voiceNoteBorder,
-          borderWidth: 1,
-          textColor: colors.voiceNoteText,
-        }
-      : variant === 'finish'
-        ? {
-            backgroundColor: colors.finishBackground,
-            borderColor: colors.finishBorder,
-            borderWidth: 0.5,
-            textColor: colors.finishText,
-          }
-        : {
-            backgroundColor: colors.surface,
-            borderColor: colors.borderSecondary,
-            borderWidth: 0.5,
-            textColor: colors.textPrimary,
-          };
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        fullWidth ? styles.actionButtonFull : styles.actionButtonHalf,
-        trailing ? styles.actionButtonTrailing : null,
-        vertical ? styles.actionButtonVertical : styles.actionButtonHorizontal,
-        {
-          backgroundColor: variantStyle.backgroundColor,
-          borderColor: variantStyle.borderColor,
-          borderWidth: variantStyle.borderWidth,
-          opacity: pressed ? 0.92 : 1,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.actionIconWrap,
-          vertical ? styles.actionIconWrapVertical : styles.actionIconWrapHorizontal,
-        ]}
-      >
-        <Text style={[styles.actionIconText, { color: variantStyle.textColor }]}>{icon}</Text>
-      </View>
-      <Text
-        style={[
-          styles.actionLabel,
-          vertical ? styles.actionLabelVertical : styles.actionLabelHorizontal,
-          { color: variantStyle.textColor },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function CheckItem({ colors, label, done, missing = false }: CheckItemProps) {
-  return (
-    <View style={styles.checkItemRow}>
-      <View
-        style={[
-          styles.checkCircle,
-          {
-            backgroundColor: done ? colors.checklistDone : colors.background,
-            borderColor: done ? colors.checklistDone : colors.borderSecondary,
-          },
-        ]}
-      >
-        {done ? (
-          <View
-            style={[
-              styles.checkMark,
-              {
-                borderColor: colors.checklistCheckmark,
-              },
-            ]}
-          />
-        ) : null}
-      </View>
-
-      <Text
-        style={[
-          styles.checkLabel,
-          {
-            color: done ? colors.textSecondary : colors.textPrimary,
-            textDecorationLine: done ? 'line-through' : 'none',
-          },
-        ]}
-      >
-        {label}
-      </Text>
-
-      {missing && !done ? (
-        <View style={[styles.missingBadge, { backgroundColor: colors.missingBackground }]}>
-          <Text style={[styles.missingBadgeText, { color: colors.missingText }]}>Missing</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function FeedItem({ colors, icon, text, time, hasThumb = false }: FeedItemProps) {
-  return (
-    <View style={styles.feedItemRow}>
-      <View style={[styles.feedIconWrap, { backgroundColor: colors.surfaceSecondary }]}>
-        <Text style={styles.feedIconText}>{icon}</Text>
-      </View>
-
-      <View style={styles.feedBody}>
-        <Text style={[styles.feedText, { color: colors.textPrimary }]}>{text}</Text>
-        <Text style={[styles.feedTime, { color: colors.textHint }]}>{time}</Text>
-      </View>
-
-      {hasThumb ? (
-        <View style={[styles.feedThumb, { backgroundColor: colors.thumbBackground }]} />
-      ) : null}
-    </View>
-  );
-}
 
 export default function ActiveJobScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<ActiveJobRoute>();
   const insets = useSafeAreaInsets();
+  const { finishJob, getRecord } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const job = JOBS.find((item) => item.id === route.params.jobId);
+  const record = getRecord(route.params.jobId);
+  const startTime = record?.activity.startTime ?? Date.now();
   const [elapsedSeconds, setElapsedSeconds] = useState(
-    Math.max(0, Math.floor((Date.now() - route.params.startTime) / 1000)),
+    Math.max(0, Math.floor((Date.now() - startTime) / 1000)),
   );
-  const [checklist] = useState<ChecklistState>({
-    beforePhoto: false,
-    issueNoted: true,
-    afterPhoto: false,
-  });
-  const statusBarStyle = 'light-content';
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - route.params.startTime) / 1000);
-      setElapsedSeconds(Math.max(0, elapsed));
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [route.params.startTime]);
+  }, [startTime]);
 
-  let promptText = 'All steps complete. Tap Finish Job when ready.';
-
-  if (!checklist.beforePhoto) {
-    promptText = 'Next step: Take a before photo to start the record.';
-  } else if (!checklist.issueNoted) {
-    promptText = 'Next step: Record a voice note or describe the issue.';
-  } else if (!checklist.afterPhoto) {
-    promptText = 'Next step: Take an after photo before finishing.';
-  }
-
-  if (!job) {
+  if (!record) {
     return (
       <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
-        <StatusBar
-          backgroundColor={theme.background}
-          barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
-          translucent={false}
-        />
+        <StatusBar backgroundColor={theme.background} barStyle="light-content" translucent={false} />
         <Text style={[styles.notFoundText, { color: theme.textPrimary }]}>Job not found</Text>
       </SafeAreaView>
     );
   }
 
+  const handleFinishJob = () => {
+    finishJob(record.job.id);
+    navigation.replace('PhotoCapture', { jobId: record.job.id });
+  };
+
   return (
-    <SafeAreaView edges={['left', 'right']} style={[styles.screen, { backgroundColor: theme.background }]}>
+    <SafeAreaView
+      edges={['left', 'right']}
+      style={[styles.screen, { backgroundColor: theme.background }]}
+    >
       <StatusBar
         backgroundColor={theme.timerBackground}
-        barStyle={statusBarStyle}
+        barStyle="light-content"
         translucent={false}
       />
 
@@ -429,132 +138,175 @@ export default function ActiveJobScreen() {
           },
         ]}
       >
-        <View style={styles.timerColumn}>
-          <Text style={[styles.timerLabel, { color: theme.timerLabel }]}>ACTIVE</Text>
-          <Text style={[styles.timerValue, { color: theme.timerText }]}>
-            {formatElapsedTime(elapsedSeconds)}
-          </Text>
-          <Text numberOfLines={1} style={[styles.timerJobName, { color: theme.timerMeta }]}>
-            {job.siteName}
-          </Text>
-        </View>
-
-        <View style={styles.timerRightColumn}>
-          <Text style={[styles.timerMetaText, { color: theme.timerLabel }]}>
-            {job.jobType} {'\u2022'} {job.zoneLabel}
-          </Text>
-          <Text style={[styles.timerSubtleText, { color: theme.timerSubtle }]}>
-            {formatStartTime(route.params.startTime)} start
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.promptStrip, { backgroundColor: theme.promptBackground }]}>
-        <Text style={[styles.promptText, { color: theme.promptText }]}>{promptText}</Text>
+        <Text style={[styles.timerLabel, { color: theme.timerLabel }]}>JOB IN PROGRESS</Text>
+        <Text style={[styles.timerText, { color: theme.timerText }]}>
+          {formatElapsedDuration(elapsedSeconds)}
+        </Text>
+        <Text style={[styles.timerMeta, { color: theme.timerMeta }]}>
+          Started at{' '}
+          {new Date(startTime).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+        </Text>
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: 24 + insets.bottom },
-        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 128 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.sectionBlock}>
-          <SectionHeader colors={theme} label="ACTIONS" />
-
-          <ActionButton
-            colors={theme}
-            fullWidth
-            icon="▮"
-            label="Record voice note"
-            onPress={() => navigation.navigate('VoiceNote', { jobId: job.id })}
-            variant="voice"
-          />
-
-          <View style={styles.actionRow}>
-            <ActionButton
-              colors={theme}
-              icon="▣"
-              label="Take photo"
-              onPress={() => navigation.navigate('PhotoCapture', { jobId: job.id })}
-              vertical
-            />
-            <ActionButton
-              colors={theme}
-              icon="✎"
-              label="Describe issue"
-              onPress={() => navigation.navigate('VoiceNote', { jobId: job.id, mode: 'text' })}
-              trailing
-              vertical
-            />
+        <View
+          style={[
+            styles.summaryCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryHeaderText}>
+              <Text style={[styles.siteName, { color: theme.textPrimary }]}>
+                {record.job.siteName}
+              </Text>
+              <Text style={[styles.jobMeta, { color: theme.textSecondary }]}>
+                {record.job.timeWindow} {'\u2022'} {record.job.jobType}
+              </Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: theme.pillBackground }]}>
+              <Text style={[styles.statusPillText, { color: theme.pillText }]}>Tracking</Text>
+            </View>
           </View>
 
-          <ActionButton
-            colors={theme}
-            fullWidth
-            icon="■"
-            label="Finish job"
-            onPress={() =>
-              navigation.navigate('ReviewReport', {
-                jobId: job.id,
-                startTime: route.params.startTime,
-              })
-            }
-            variant="finish"
-          />
+          <View style={[styles.detailRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.detailLabel, { color: theme.textHint }]}>ADDRESS</Text>
+            <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
+              {record.job.address}
+            </Text>
+          </View>
+
+          <View style={[styles.detailRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.detailLabel, { color: theme.textHint }]}>TASK SUMMARY</Text>
+            <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
+              {record.job.issue}
+            </Text>
+          </View>
+
+          <View style={[styles.detailRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.detailLabel, { color: theme.textHint }]}>WORK AREA</Text>
+            <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
+              {record.job.zoneLabel}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.sectionBlock}>
-          <SectionHeader colors={theme} label="PROGRESS" />
+        <View
+          style={[
+            styles.guidanceCard,
+            {
+              backgroundColor: theme.surfaceSecondary,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <Text style={[styles.guidanceTitle, { color: theme.textPrimary }]}>
+            Work first. Logging happens after.
+          </Text>
+          <Text style={[styles.guidanceBody, { color: theme.textSecondary }]}>
+            Leave the phone alone while the timer runs. When the job is done, tap Finish Job and
+            add final site photos for proof of work.
+          </Text>
 
-          <CheckItem
-            colors={theme}
-            done={checklist.beforePhoto}
-            label="Before photo captured"
-            missing={!checklist.beforePhoto}
-          />
-          <CheckItem colors={theme} done={checklist.issueNoted} label="Issue documented" />
-          <CheckItem
-            colors={theme}
-            done={checklist.afterPhoto}
-            label="After photo captured"
-            missing={!checklist.afterPhoto}
-          />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigation.navigate('VoiceNote', { jobId: record.job.id })}
+            style={({ pressed }) => [
+              styles.voiceNoteButton,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSecondary,
+                opacity: pressed ? 0.92 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.voiceNoteButtonText, { color: theme.textPrimary }]}>
+              Record Voice Note
+            </Text>
+            <Text style={[styles.voiceNoteButtonMeta, { color: theme.textSecondary }]}>
+              {record.activity.voiceNotes.length > 0
+                ? `${record.activity.voiceNotes.length} saved`
+                : 'Optional during the active session'}
+            </Text>
+          </Pressable>
         </View>
 
-        <View style={styles.sectionBlock}>
-          <SectionHeader colors={theme} label="ACTIVITY" />
+        {record.activity.voiceNotes.length > 0 ? (
+          <View
+            style={[
+              styles.latestNoteCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSecondary,
+              },
+            ]}
+          >
+            <Text style={[styles.latestNoteLabel, { color: theme.textHint }]}>LATEST NOTE</Text>
+            <Text style={[styles.latestNoteText, { color: theme.textPrimary }]}>
+              {record.activity.voiceNotes[record.activity.voiceNotes.length - 1]?.transcript}
+            </Text>
+          </View>
+        ) : null}
 
-          {FEED_ITEMS.map((item) => (
-            <FeedItem
-              colors={theme}
-              icon={item.icon}
-              key={`${item.time}-${item.text}`}
-              text={item.text}
-              time={item.time}
-            />
-          ))}
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>REFERENCE</Text>
+          <View
+            style={[
+              styles.referenceCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSecondary,
+              },
+            ]}
+          >
+            <Image resizeMode="cover" source={{ uri: REFERENCE_IMAGE_URI }} style={styles.referenceImage} />
+            <View style={[styles.referenceCopy, { backgroundColor: theme.surfaceSecondary }]}>
+              <Text style={[styles.referenceTitle, { color: theme.textPrimary }]}>
+                Existing Site Context
+              </Text>
+              <Text style={[styles.referenceText, { color: theme.textSecondary }]}>
+                Keep any reference or arrival context lightweight. Final photos remain the main proof-of-work step in the MVP.
+              </Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
+
+      <View
+        style={[
+          styles.ctaBar,
+          {
+            backgroundColor: theme.background,
+            borderTopColor: theme.borderSecondary,
+            paddingBottom: Math.max(insets.bottom, 12),
+          },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleFinishJob}
+          style={({ pressed }) => [
+            styles.finishButton,
+            {
+              backgroundColor: theme.actionPrimary,
+              opacity: pressed ? 0.92 : 1,
+            },
+          ]}
+        >
+          <Text style={[styles.finishButtonText, { color: theme.actionText }]}>Finish Job</Text>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
-}
-
-function formatElapsedTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60)
-    .toString()
-    .padStart(2, '0');
-  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-
-  return `${minutes}:${seconds}`;
-}
-
-function formatStartTime(startTime: number) {
-  return new Date(startTime).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 const styles = StyleSheet.create({
@@ -568,189 +320,174 @@ const styles = StyleSheet.create({
   },
   notFoundText: {
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '600',
   },
   timerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingBottom: 14,
+    alignItems: 'center',
+    paddingBottom: 20,
     paddingHorizontal: 20,
   },
-  timerColumn: {
-    flex: 1,
-    marginRight: 16,
-  },
-  timerRightColumn: {
-    alignItems: 'flex-end',
-    justifyContent: 'flex-start',
-  },
   timerLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.66,
-    marginBottom: 6,
-  },
-  timerValue: {
-    fontSize: 32,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '500',
-    lineHeight: 36,
-    marginBottom: 4,
-  },
-  timerJobName: {
     fontSize: 12,
-    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
-  timerMetaText: {
-    fontSize: 11,
-    lineHeight: 15,
-    marginBottom: 4,
-    textAlign: 'right',
+  timerText: {
+    fontSize: 44,
+    fontWeight: '700',
+    marginTop: 10,
   },
-  timerSubtleText: {
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: 'right',
-  },
-  promptStrip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  promptText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  scrollContent: {
-    paddingTop: 16,
-  },
-  sectionBlock: {
-    marginBottom: 16,
-    paddingHorizontal: 16,
-  },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.55,
-    marginBottom: 10,
-  },
-  actionRow: {
-    flexDirection: 'row',
+  timerMeta: {
+    fontSize: 15,
     marginTop: 8,
   },
-  actionButton: {
-    borderRadius: 12,
-    padding: 16,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
-  actionButtonFull: {
+  summaryCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  summaryHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  summaryHeaderText: {
+    flex: 1,
+    marginRight: 12,
+  },
+  siteName: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  jobMeta: {
+    fontSize: 14,
+    marginTop: 6,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailRow: {
+    borderTopWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  detailValue: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  guidanceCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 18,
+    padding: 18,
+  },
+  guidanceTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  guidanceBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  voiceNoteButton: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  voiceNoteButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  voiceNoteButtonMeta: {
+    fontSize: 13,
+    marginTop: 6,
+  },
+  latestNoteCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 18,
+    padding: 18,
+  },
+  latestNoteLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  latestNoteText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  sectionBlock: {
+    marginTop: 22,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  referenceCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  referenceImage: {
+    height: 220,
     width: '100%',
   },
-  actionButtonHalf: {
-    flex: 1,
+  referenceCopy: {
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
-  actionButtonTrailing: {
-    marginLeft: 8,
-  },
-  actionButtonHorizontal: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  actionButtonVertical: {
-    alignItems: 'flex-start',
-    minHeight: 104,
-  },
-  actionIconWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionIconWrapHorizontal: {
-    marginRight: 10,
-  },
-  actionIconWrapVertical: {
-    marginBottom: 12,
-  },
-  actionIconText: {
+  referenceTitle: {
     fontSize: 16,
-    lineHeight: 16,
+    fontWeight: '700',
   },
-  actionLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  actionLabelHorizontal: {
-    flex: 1,
-  },
-  actionLabelVertical: {
-    lineHeight: 20,
-  },
-  checkItemRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    paddingVertical: 10,
-  },
-  checkCircle: {
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    height: 20,
-    justifyContent: 'center',
-    marginRight: 10,
-    width: 20,
-  },
-  checkMark: {
-    borderBottomWidth: 2,
-    borderRightWidth: 2,
-    height: 9,
-    transform: [{ rotate: '45deg' }],
-    width: 5,
-  },
-  checkLabel: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  missingBadge: {
-    borderRadius: 4,
-    marginLeft: 12,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  missingBadgeText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  feedItemRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    paddingVertical: 10,
-  },
-  feedIconWrap: {
-    alignItems: 'center',
-    borderRadius: 6,
-    height: 28,
-    justifyContent: 'center',
-    marginRight: 12,
-    width: 28,
-  },
-  feedIconText: {
+  referenceText: {
     fontSize: 14,
-    lineHeight: 14,
+    lineHeight: 21,
+    marginTop: 8,
   },
-  feedBody: {
-    flex: 1,
+  ctaBar: {
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    position: 'absolute',
+    right: 0,
   },
-  feedText: {
-    fontSize: 13,
-    lineHeight: 18,
+  finishButton: {
+    alignItems: 'center',
+    borderRadius: 18,
+    justifyContent: 'center',
+    minHeight: 56,
   },
-  feedTime: {
-    fontSize: 11,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  feedThumb: {
-    borderRadius: 4,
-    height: 40,
-    marginLeft: 12,
-    width: 52,
+  finishButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

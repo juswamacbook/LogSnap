@@ -1,9 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React from 'react';
 import {
-  Animated,
   Appearance,
-  Easing,
+  Image,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -12,24 +12,15 @@ import {
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled' | 'completed';
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-};
+import { useJobSession } from './JobSessionContext';
+import { buildReportSummary, formatDurationFromMs } from './jobData';
 
 type RootStackParamList = {
   JobsList: undefined;
   JobDetail: { jobId: string };
-  Success: { jobId: string; duration: number };
+  Success: { jobId: string };
 };
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'Success'>;
@@ -47,48 +38,7 @@ type ThemeColors = {
   actionText: string;
   successBackground: string;
   successMark: string;
-  statusOverdueBackground: string;
-  statusOverdueText: string;
-  statusStartingSoonBackground: string;
-  statusStartingSoonText: string;
-  statusInProgressBackground: string;
-  statusInProgressText: string;
-  statusScheduledBackground: string;
-  statusScheduledText: string;
 };
-
-type StatusBadgeProps = {
-  colors: ThemeColors;
-  status: JobStatus;
-};
-
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-  },
-];
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
@@ -97,20 +47,12 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     surfaceSecondary: '#F4F6F8',
     textPrimary: '#111111',
     textSecondary: '#6B6B6B',
-    textHint: '#AAAAAA',
+    textHint: '#8E8E93',
     borderSecondary: 'rgba(0,0,0,0.15)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
     successBackground: '#EAF3DE',
     successMark: '#3B6D11',
-    statusOverdueBackground: '#FCEBEB',
-    statusOverdueText: '#A32D2D',
-    statusStartingSoonBackground: '#E6F1FB',
-    statusStartingSoonText: '#185FA5',
-    statusInProgressBackground: '#EAF3DE',
-    statusInProgressText: '#3B6D11',
-    statusScheduledBackground: '#F1EFE8',
-    statusScheduledText: '#5F5E5A',
   },
   dark: {
     background: '#111111',
@@ -124,134 +66,25 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     actionText: '#FFFFFF',
     successBackground: '#EAF3DE',
     successMark: '#3B6D11',
-    statusOverdueBackground: '#FCEBEB',
-    statusOverdueText: '#A32D2D',
-    statusStartingSoonBackground: '#E6F1FB',
-    statusStartingSoonText: '#185FA5',
-    statusInProgressBackground: '#EAF3DE',
-    statusInProgressText: '#3B6D11',
-    statusScheduledBackground: '#F1EFE8',
-    statusScheduledText: '#5F5E5A',
   },
 };
-
-const STATUS_LABELS: Record<JobStatus, string> = {
-  overdue: 'Overdue',
-  starting_soon: 'Starting Soon',
-  in_progress: 'In Progress',
-  scheduled: 'Scheduled',
-  completed: 'Completed',
-};
-
-function StatusBadge({ colors, status }: StatusBadgeProps) {
-  const badgeStyles = getStatusBadgeStyle(colors, status);
-
-  return (
-    <View style={[styles.badgeBase, badgeStyles.container]}>
-      <Text style={[styles.badgeTextBase, badgeStyles.text]}>{STATUS_LABELS[status]}</Text>
-    </View>
-  );
-}
 
 export default function SuccessScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<SuccessRoute>();
+  const insets = useSafeAreaInsets();
+  const { getRecord, records } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const screenOpacity = useRef(new Animated.Value(0)).current;
-  const checkScale = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslateY = useRef(new Animated.Value(8)).current;
-  const lowerOpacity = useRef(new Animated.Value(0)).current;
-  const lowerTranslateY = useRef(new Animated.Value(8)).current;
-  const currentJob = JOBS.find((job) => job.id === route.params.jobId);
-  const nextJob = JOBS.find((job) => job.id !== route.params.jobId && job.status !== 'completed');
-  const endTime = Date.now();
+  const record = getRecord(route.params.jobId);
+  const nextJob = records.find(
+    (item) => item.job.id !== route.params.jobId && item.job.status !== 'completed',
+  );
   const statusBarStyle = colorScheme === 'dark' ? 'light-content' : 'dark-content';
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ gestureEnabled: false });
-  }, [navigation]);
-
-  useEffect(() => {
-    const sequence = Animated.parallel([
-      Animated.timing(screenOpacity, {
-        duration: 200,
-        easing: Easing.out(Easing.ease),
-        toValue: 1,
-        useNativeDriver: true,
-      }),
-      Animated.sequence([
-        Animated.delay(200),
-        Animated.spring(checkScale, {
-          friction: 8,
-          tension: 80,
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.sequence([
-        Animated.delay(350),
-        Animated.parallel([
-          Animated.timing(textOpacity, {
-            duration: 240,
-            easing: Easing.out(Easing.ease),
-            toValue: 1,
-            useNativeDriver: true,
-          }),
-          Animated.timing(textTranslateY, {
-            duration: 240,
-            easing: Easing.out(Easing.ease),
-            toValue: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]),
-      Animated.sequence([
-        Animated.delay(480),
-        Animated.parallel([
-          Animated.timing(lowerOpacity, {
-            duration: 240,
-            easing: Easing.out(Easing.ease),
-            toValue: 1,
-            useNativeDriver: true,
-          }),
-          Animated.timing(lowerTranslateY, {
-            duration: 240,
-            easing: Easing.out(Easing.ease),
-            toValue: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]),
-    ]);
-
-    sequence.start();
-
-    return () => {
-      sequence.stop();
-    };
-  }, [checkScale, lowerOpacity, lowerTranslateY, screenOpacity, textOpacity, textTranslateY]);
-
-  const handleResetToJobs = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'JobsList' }],
-    });
-  };
-
-  const handleOpenNext = () => {
-    if (nextJob) {
-      navigation.navigate('JobDetail', { jobId: nextJob.id });
-      return;
-    }
-
-    handleResetToJobs();
-  };
-
-  if (!currentJob) {
+  if (!record) {
     return (
       <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
         <StatusBar
@@ -264,6 +97,12 @@ export default function SuccessScreen() {
     );
   }
 
+  const duration =
+    record.activity.startTime && record.activity.endTime
+      ? record.activity.endTime - record.activity.startTime
+      : 0;
+  const summary = buildReportSummary(record);
+
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]}>
       <StatusBar
@@ -272,158 +111,206 @@ export default function SuccessScreen() {
         translucent={false}
       />
 
-      <Animated.View style={[styles.content, { opacity: screenOpacity }]}>
-        <Animated.View style={{ transform: [{ scale: checkScale }] }}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: theme.borderSecondary,
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        <Text style={[styles.headerLabel, { color: theme.textHint }]}>JOBBER</Text>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Submission complete</Text>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 146 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
           <View style={[styles.successCircle, { backgroundColor: theme.successBackground }]}>
             <View style={styles.checkWrap}>
-              <View
-                style={[
-                  styles.checkVerticalArm,
-                  { backgroundColor: theme.successMark },
-                ]}
-              />
-              <View
-                style={[
-                  styles.checkHorizontalArm,
-                  { backgroundColor: theme.successMark },
-                ]}
-              />
+              <View style={[styles.checkVerticalArm, { backgroundColor: theme.successMark }]} />
+              <View style={[styles.checkHorizontalArm, { backgroundColor: theme.successMark }]} />
             </View>
           </View>
-        </Animated.View>
-
-        <Animated.View
-          style={[
-            styles.textBlock,
-            {
-              opacity: textOpacity,
-              transform: [{ translateY: textTranslateY }],
-            },
-          ]}
-        >
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Submitted to Jobber</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {`${currentJob.siteName} · ${formatDuration(route.params.duration)} · ${formatTime(endTime)}`}
+          <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>{record.job.siteName}</Text>
+          <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
+            Report submitted from the recorded work session, attached voice notes, and final site photos.
           </Text>
-        </Animated.View>
+        </View>
 
-        <Animated.View
+        <View
           style={[
-            styles.lowerBlock,
+            styles.reportCard,
             {
-              opacity: lowerOpacity,
-              transform: [{ translateY: lowerTranslateY }],
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
             },
           ]}
         >
-          {nextJob ? (
-            <View style={styles.nextJobWrap}>
-              <View style={[styles.nextJobCard, { backgroundColor: theme.surfaceSecondary }]}>
-                <Text style={[styles.nextJobLabel, { color: theme.textHint }]}>Next job</Text>
-                <Text style={[styles.nextJobSite, { color: theme.textPrimary }]}>
-                  {nextJob.siteName}
-                </Text>
-                <View style={styles.nextJobMetaRow}>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.nextJobAddress, { color: theme.textSecondary }]}
-                  >
-                    {nextJob.address}
-                  </Text>
-                  <StatusBadge colors={theme} status={nextJob.status} />
-                </View>
-              </View>
-            </View>
-          ) : null}
+          <ReportRow
+            label="START TIME"
+            theme={theme}
+            value={formatTime(record.activity.startTime)}
+          />
+          <ReportRow
+            label="END TIME"
+            theme={theme}
+            value={formatTime(record.activity.endTime)}
+          />
+          <ReportRow
+            label="DURATION"
+            theme={theme}
+            value={formatDurationFromMs(duration)}
+          />
+          <ReportRow label="LOCATION" theme={theme} value={record.job.address} />
+        </View>
 
-          <View style={styles.buttonRowWrap}>
-            <View style={styles.buttonRow}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleResetToJobs}
-                style={({ pressed }) => [
-                  styles.secondaryButton,
+        <View
+          style={[
+            styles.summaryCard,
+            {
+              backgroundColor: theme.surfaceSecondary,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>SUMMARY</Text>
+          <Text style={[styles.summaryText, { color: theme.textPrimary }]}>{summary}</Text>
+        </View>
+
+        <View style={styles.photoSection}>
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>FINAL PHOTOS</Text>
+          <View style={styles.photoGrid}>
+            {record.activity.finalPhotos.map((photo) => (
+              <View
+                key={photo.id}
+                style={[
+                  styles.photoTile,
                   {
                     backgroundColor: theme.surface,
                     borderColor: theme.borderSecondary,
-                    opacity: pressed ? 0.92 : 1,
                   },
                 ]}
               >
-                <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>
-                  Jobs list
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleOpenNext}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  {
-                    backgroundColor: theme.actionPrimary,
-                    opacity: pressed ? 0.92 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.primaryButtonText, { color: theme.actionText }]}>
-                  Open next job
-                </Text>
-              </Pressable>
-            </View>
+                <Image resizeMode="cover" source={{ uri: photo.uri }} style={styles.photoImage} />
+              </View>
+            ))}
           </View>
-        </Animated.View>
-      </Animated.View>
+        </View>
+
+        <View
+          style={[
+            styles.exportCard,
+            {
+              backgroundColor: theme.surfaceSecondary,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>NEXT</Text>
+          <Text style={[styles.exportText, { color: theme.textPrimary }]}>
+            This report is ready for future sharing, export, or supervisor review without adding
+            more work in the field.
+          </Text>
+        </View>
+      </ScrollView>
+
+      <View
+        style={[
+          styles.ctaBar,
+          {
+            backgroundColor: theme.background,
+            borderTopColor: theme.borderSecondary,
+            paddingBottom: Math.max(insets.bottom, 12),
+          },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'JobsList' }],
+            })
+          }
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+              opacity: pressed ? 0.92 : 1,
+            },
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Jobs List</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            nextJob
+              ? navigation.navigate('JobDetail', { jobId: nextJob.job.id })
+              : navigation.reset({ index: 0, routes: [{ name: 'JobsList' }] })
+          }
+          style={({ pressed }) => [
+            styles.primaryButton,
+            {
+              backgroundColor: theme.actionPrimary,
+              opacity: pressed ? 0.92 : 1,
+            },
+          ]}
+        >
+          <Text style={[styles.primaryButtonText, { color: theme.actionText }]}>
+            {nextJob ? 'Open Next Job' : 'Back to Jobs'}
+          </Text>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
 
-function formatDuration(ms: number) {
-  return `${Math.round(ms / 60000)} min`;
+function ReportRow({
+  label,
+  value,
+  theme,
+}: {
+  label: string;
+  value: string;
+  theme: ThemeColors;
+}) {
+  return (
+    <View style={[styles.reportRow, { borderBottomColor: theme.borderSecondary }]}>
+      <Text style={[styles.reportLabel, { color: theme.textHint }]}>{label}</Text>
+      <Text style={[styles.reportValue, { color: theme.textPrimary }]}>{value}</Text>
+    </View>
+  );
 }
 
-function formatTime(ms: number) {
-  return new Date(ms).toLocaleTimeString([], {
-    hour: '2-digit',
+function formatTime(timestamp?: number) {
+  if (!timestamp) {
+    return 'Not recorded';
+  }
+
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function getStatusBadgeStyle(colors: ThemeColors, status: JobStatus) {
-  switch (status) {
-    case 'overdue':
-      return {
-        container: { backgroundColor: colors.statusOverdueBackground },
-        text: { color: colors.statusOverdueText },
-      };
-    case 'starting_soon':
-      return {
-        container: { backgroundColor: colors.statusStartingSoonBackground },
-        text: { color: colors.statusStartingSoonText },
-      };
-    case 'in_progress':
-      return {
-        container: { backgroundColor: colors.statusInProgressBackground },
-        text: { color: colors.statusInProgressText },
-      };
-    case 'scheduled':
-    case 'completed':
-    default:
-      return {
-        container: { backgroundColor: colors.statusScheduledBackground },
-        text: { color: colors.statusScheduledText },
-      };
-  }
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-  },
-  content: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
   },
   notFoundScreen: {
     alignItems: 'center',
@@ -432,7 +319,33 @@ const styles = StyleSheet.create({
   },
   notFoundText: {
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '600',
+  },
+  header: {
+    borderBottomWidth: 1,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+  },
+  headerLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  heroCard: {
+    alignItems: 'center',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
   successCircle: {
     alignItems: 'center',
@@ -460,101 +373,116 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 16,
   },
-  textBlock: {
-    alignItems: 'center',
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '700',
     marginTop: 16,
-    paddingHorizontal: 24,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '500',
     textAlign: 'center',
   },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
+  heroSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
     textAlign: 'center',
   },
-  lowerBlock: {
-    alignItems: 'center',
+  reportCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 18,
+    overflow: 'hidden',
+  },
+  reportRow: {
+    borderBottomWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  reportLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  reportValue: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  summaryCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 18,
+    padding: 18,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  summaryText: {
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  photoSection: {
+    marginTop: 22,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  photoTile: {
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 138,
+    overflow: 'hidden',
+    width: '48%',
+  },
+  photoImage: {
+    height: '100%',
     width: '100%',
   },
-  nextJobWrap: {
-    marginTop: 24,
-    paddingHorizontal: 24,
-    width: '100%',
+  exportCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 22,
+    padding: 18,
   },
-  nextJobCard: {
-    alignItems: 'center',
-    borderRadius: 12,
+  exportText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  ctaBar: {
+    borderTopWidth: 1,
+    bottom: 0,
+    flexDirection: 'row',
+    left: 0,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  nextJobLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.55,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  nextJobSite: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  nextJobMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  nextJobAddress: {
-    fontSize: 12,
-    marginRight: 8,
-    maxWidth: 180,
-    textAlign: 'center',
-  },
-  badgeBase: {
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  badgeTextBase: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  buttonRowWrap: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-    width: '100%',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    width: '100%',
+    paddingTop: 14,
+    position: 'absolute',
+    right: 0,
   },
   secondaryButton: {
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 0.5,
+    borderRadius: 16,
+    borderWidth: 1,
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: 14,
+    marginRight: 10,
+    minHeight: 54,
   },
   secondaryButtonText: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   primaryButton: {
-    borderRadius: 12,
-    flex: 2,
+    alignItems: 'center',
+    borderRadius: 16,
+    flex: 1.2,
     justifyContent: 'center',
-    marginLeft: 8,
-    paddingVertical: 16,
+    minHeight: 54,
   },
   primaryButtonText: {
     fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: '700',
   },
 });

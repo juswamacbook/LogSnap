@@ -1,537 +1,642 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Alert,
+  Appearance,
   Image,
-  PermissionsAndroid,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
+  useColorScheme,
   View,
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 
-type PhotoTag = 'Before' | 'During' | 'After';
-
-type CapturedPhoto = {
-  uri: string;
-  tag: PhotoTag;
-  timestamp: number;
-};
+import { useJobSession } from './JobSessionContext';
+import { formatDurationFromMs } from './jobData';
 
 type RootStackParamList = {
-  ActiveJob: { jobId: string; startTime?: number; newPhotos?: CapturedPhoto[] };
   PhotoCapture: { jobId: string };
+  ReviewReport: { jobId: string };
 };
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'PhotoCapture'>;
 type PhotoCaptureRoute = RouteProp<RootStackParamList, 'PhotoCapture'>;
 
-const SCREEN_BACKGROUND = '#111111';
-const HEADER_BORDER = 'rgba(255,255,255,0.1)';
-const MUTED_TEXT = 'rgba(255,255,255,0.7)';
-const BRACKET_COLOR = 'rgba(255,255,255,0.85)';
-const FLASH_COLOR = '#FFFFFF';
-const TAG_COLORS: Record<PhotoTag, string> = {
-  Before: '#378ADD',
-  During: '#1D9E75',
-  After: '#D85A30',
+type ThemeColors = {
+  background: string;
+  surface: string;
+  surfaceSecondary: string;
+  textPrimary: string;
+  textSecondary: string;
+  textHint: string;
+  borderSecondary: string;
+  actionPrimary: string;
+  actionText: string;
+  accentBackground: string;
+  accentText: string;
+  mutedButton: string;
+  mutedButtonText: string;
 };
-const TAGS: PhotoTag[] = ['Before', 'During', 'After'];
+
+const MAX_FINAL_PHOTOS = 3;
+
+const colors: Record<'light' | 'dark', ThemeColors> = {
+  light: {
+    background: '#FFFFFF',
+    surface: '#FFFFFF',
+    surfaceSecondary: '#F4F6F8',
+    textPrimary: '#111111',
+    textSecondary: '#6B6B6B',
+    textHint: '#8E8E93',
+    borderSecondary: 'rgba(0,0,0,0.12)',
+    actionPrimary: '#0F2D54',
+    actionText: '#FFFFFF',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
+    mutedButton: '#EEF2F5',
+    mutedButtonText: '#0F2D54',
+  },
+  dark: {
+    background: '#111111',
+    surface: '#1C1C1E',
+    surfaceSecondary: '#262629',
+    textPrimary: '#F5F5F5',
+    textSecondary: '#9A9AA0',
+    textHint: '#6B6B70',
+    borderSecondary: 'rgba(255,255,255,0.12)',
+    actionPrimary: '#0F2D54',
+    actionText: '#FFFFFF',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
+    mutedButton: '#262629',
+    mutedButtonText: '#F5F5F5',
+  },
+};
 
 export default function PhotoCaptureScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<PhotoCaptureRoute>();
-  const cameraRef = useRef<any>(null);
+  const insets = useSafeAreaInsets();
+  const { addFinalPhoto, getRecord, setCompletionNote } = useJobSession();
+  const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
+    | 'light'
+    | 'dark';
+  const theme = colors[colorScheme];
   const flashOpacity = useRef(new Animated.Value(0)).current;
-  const [cameraAllowed, setCameraAllowed] = useState<boolean | null>(null);
-  const [capturedPhotos, setCapturedPhotos] = useState<CapturedPhoto[]>([]);
-  const [activeTag, setActiveTag] = useState<PhotoTag>('Before');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const record = getRecord(route.params.jobId);
 
   useEffect(() => {
-    let mounted = true;
+    flashOpacity.setValue(0);
+  }, [flashOpacity]);
 
-    const requestPermission = async () => {
-      const granted = await requestCameraAccess();
+  if (!record) {
+    return (
+      <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
+        <Text style={[styles.notFoundText, { color: theme.textPrimary }]}>Job not found</Text>
+      </SafeAreaView>
+    );
+  }
 
-      if (mounted) {
-        setCameraAllowed(granted);
-      }
-    };
+  const duration =
+    record.activity.startTime && record.activity.endTime
+      ? record.activity.endTime - record.activity.startTime
+      : 0;
 
-    void requestPermission();
+  const handleAddPhoto = () => {
+    if (record.activity.finalPhotos.length >= MAX_FINAL_PHOTOS) {
+      return;
+    }
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    Alert.alert('Add Photo', 'Choose how to add the photo.', [
+      {
+        text: 'Take Photo',
+        onPress: () => {
+          void handlePickPhoto('camera');
+        },
+      },
+      {
+        text: 'Choose Existing',
+        onPress: () => {
+          void handlePickPhoto('library');
+        },
+      },
+      {
+        style: 'cancel',
+        text: 'Cancel',
+      },
+    ]);
+  };
 
-  const handleCapturePhoto = async () => {
+  const handlePickPhoto = async (source: 'camera' | 'library') => {
+    if (record.activity.finalPhotos.length >= MAX_FINAL_PHOTOS) {
+      return;
+    }
+
     Animated.sequence([
       Animated.timing(flashOpacity, {
-        duration: 75,
+        duration: 70,
         toValue: 1,
         useNativeDriver: true,
       }),
       Animated.timing(flashOpacity, {
-        duration: 75,
+        duration: 90,
         toValue: 0,
         useNativeDriver: true,
       }),
     ]).start();
 
-    const uri = await takePhoto(cameraRef.current);
+    const result =
+      source === 'camera'
+        ? await launchCameraCapture()
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: false,
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 0.8,
+            selectionLimit: 1,
+          });
 
-    if (!uri) {
+    if (result.canceled || !result.assets?.[0]?.uri) {
       return;
     }
 
-    setCapturedPhotos((current) => [
-      ...current,
-      {
-        tag: activeTag,
-        timestamp: Date.now(),
-        uri,
-      },
-    ]);
-    setActiveTag(getNextTag(activeTag));
+    const timestamp = Date.now();
+    addFinalPhoto(record.job.id, {
+      id: `${timestamp}`,
+      timestamp,
+      uri: result.assets[0].uri,
+    });
   };
 
-  const handleDone = () => {
-    navigation.navigate('ActiveJob', {
-      jobId: route.params.jobId,
-      newPhotos: capturedPhotos,
-    });
+  const handleGenerateReport = async () => {
+    if (record.activity.finalPhotos.length === 0 || isGenerating) {
+      return;
+    }
+
+    setIsGenerating(true);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    setIsGenerating(false);
+    navigation.replace('ReviewReport', { jobId: record.job.id });
   };
 
   return (
     <SafeAreaView
-      edges={['top', 'bottom']}
-      style={[styles.screen, { backgroundColor: SCREEN_BACKGROUND }]}
+      edges={['left', 'right']}
+      style={[styles.screen, { backgroundColor: theme.background }]}
     >
-      <StatusBar hidden />
+      <StatusBar
+        backgroundColor={theme.background}
+        barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
+        translucent={false}
+      />
 
       <View
         style={[
           styles.header,
           {
-            borderBottomColor: HEADER_BORDER,
+            backgroundColor: theme.background,
+            borderBottomColor: theme.borderSecondary,
+            paddingTop: insets.top,
           },
         ]}
       >
         <Pressable
           accessibilityRole="button"
           onPress={() => navigation.goBack()}
-          style={({ pressed }) => [styles.headerSide, pressed ? styles.pressed : null]}
+          style={({ pressed }) => [styles.headerActionWrap, pressed ? styles.pressed : null]}
         >
-          <Text style={styles.headerAction}>Cancel</Text>
+          <Text style={[styles.headerAction, { color: theme.textSecondary }]}>Back</Text>
         </Pressable>
-
-        <Text style={styles.headerTitle}>Photo</Text>
-
-        <View style={styles.headerSide} />
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Final Photos</Text>
+        <View style={styles.headerActionWrap} />
       </View>
 
-      <View style={styles.viewfinderShell}>
-        {cameraAllowed === false ? (
-          <View style={styles.permissionFallback}>
-            <Text style={styles.permissionText}>Camera access required</Text>
-          </View>
-        ) : (
-          <>
-            <View style={styles.viewfinder}>
-              <CameraView />
-              <CornerBrackets />
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.flashOverlay,
-                  {
-                    opacity: flashOpacity,
-                  },
-                ]}
-              />
-            </View>
-          </>
-        )}
-      </View>
-
-      <View style={styles.tagSelector}>
-        {TAGS.map((tag, index) => {
-          const selected = tag === activeTag;
-
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={tag}
-              onPress={() => setActiveTag(tag)}
-              style={({ pressed }) => [
-                styles.tagPill,
-                index > 0 ? styles.tagPillTrailing : null,
-                selected ? styles.tagPillSelected : null,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[styles.tagText, selected ? styles.tagTextSelected : null]}>{tag}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View
-        style={[
-          styles.captureBar,
-          styles.captureBarPadding,
-        ]}
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.thumbnailScrollContent}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.thumbnailStrip}
+        <View
+          style={[
+            styles.summaryCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
         >
-          {capturedPhotos.map((photo, index) => {
-            const isLast = index === capturedPhotos.length - 1;
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryHeaderText}>
+              <Text style={[styles.jobTitle, { color: theme.textPrimary }]}>
+                {record.job.siteName}
+              </Text>
+              <Text style={[styles.jobMeta, { color: theme.textSecondary }]}>
+                {record.job.timeWindow} {'\u2022'} {record.job.jobType}
+              </Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: theme.accentBackground }]}>
+              <Text style={[styles.statusPillText, { color: theme.accentText }]}>
+                Finish Logged
+              </Text>
+            </View>
+          </View>
 
-            return (
+          <View style={[styles.summaryRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textHint }]}>ADDRESS</Text>
+            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+              {record.job.address}
+            </Text>
+          </View>
+          <View style={[styles.summaryRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textHint }]}>WORK SESSION</Text>
+            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+              {record.activity.startTime
+                ? `${new Date(record.activity.startTime).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })} - ${new Date(record.activity.endTime ?? Date.now()).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`
+                : 'Session timing unavailable'}
+            </Text>
+          </View>
+          <View style={[styles.summaryRow, { borderTopColor: theme.borderSecondary }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textHint }]}>DURATION</Text>
+            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+              {formatDurationFromMs(duration)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>PROOF OF WORK</Text>
+          <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+            Add 1 to 3 final site photos. This is the main proof step for the MVP, so there is no
+            before/during photo requirement here.
+          </Text>
+
+          <View style={styles.photoGrid}>
+            {record.activity.finalPhotos.map((photo, index) => (
               <View
-                key={`${photo.uri}-${photo.timestamp}`}
+                key={photo.id}
                 style={[
-                  styles.thumbnail,
-                  index > 0 ? styles.thumbnailTrailing : null,
+                  styles.photoTile,
                   {
-                    backgroundColor: TAG_COLORS[photo.tag],
-                    borderColor: isLast ? '#FFFFFF' : 'transparent',
+                    backgroundColor: theme.surface,
+                    borderColor: theme.borderSecondary,
                   },
                 ]}
               >
-                {photo.uri.startsWith('file://') || photo.uri.startsWith('content://') ? (
-                  <Image source={{ uri: photo.uri }} style={styles.thumbnailImage} />
-                ) : (
-                  <View style={styles.thumbnailFallback}>
-                    <Text style={styles.thumbnailFallbackText}>{photo.tag}</Text>
-                  </View>
-                )}
-                <View style={styles.thumbnailLabel}>
-                  <Text style={styles.thumbnailLabelText}>{photo.tag.slice(0, 3).toUpperCase()}</Text>
+                <Image resizeMode="cover" source={{ uri: photo.uri }} style={styles.photoImage} />
+                <View style={[styles.photoBadge, { backgroundColor: theme.actionPrimary }]}>
+                  <Text style={[styles.photoBadgeText, { color: theme.actionText }]}>
+                    {index + 1}
+                  </Text>
                 </View>
               </View>
-            );
-          })}
-        </ScrollView>
+            ))}
 
-        <TouchableOpacity
+            {record.activity.finalPhotos.length < MAX_FINAL_PHOTOS ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                activeOpacity={0.8}
+                onPress={handleAddPhoto}
+                style={[
+                  styles.addPhotoTile,
+                  {
+                    backgroundColor: theme.surfaceSecondary,
+                    borderColor: theme.borderSecondary,
+                  },
+                ]}
+              >
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.flashOverlay, { opacity: flashOpacity }]}
+                />
+                <Text style={[styles.addPhotoIcon, { color: theme.actionPrimary }]}>+</Text>
+                <Text style={[styles.addPhotoText, { color: theme.textPrimary }]}>Add Photo</Text>
+                <Text style={[styles.addPhotoSubtext, { color: theme.textSecondary }]}>
+                  {`${MAX_FINAL_PHOTOS - record.activity.finalPhotos.length} remaining`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>OPTIONAL NOTE</Text>
+          <View
+            style={[
+              styles.notesCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSecondary,
+              },
+            ]}
+          >
+            <TextInput
+              multiline
+              onChangeText={(value) => setCompletionNote(record.job.id, value)}
+              placeholder="Anything worth flagging before the report is generated?"
+              placeholderTextColor={theme.textHint}
+              style={[styles.notesInput, { color: theme.textPrimary }]}
+              textAlignVertical="top"
+              value={record.activity.completionNote}
+            />
+          </View>
+        </View>
+      </ScrollView>
+
+      <View
+        style={[
+          styles.ctaBar,
+          {
+            backgroundColor: theme.background,
+            borderTopColor: theme.borderSecondary,
+            paddingBottom: Math.max(insets.bottom, 12),
+          },
+        ]}
+      >
+        <Pressable
           accessibilityRole="button"
-          activeOpacity={0.7}
+          disabled={record.activity.finalPhotos.length === 0 || isGenerating}
           onPress={() => {
-            void handleCapturePhoto();
+            void handleGenerateReport();
           }}
-          style={styles.shutterOuter}
+          style={({ pressed }) => [
+            styles.submitButton,
+            {
+              backgroundColor: theme.actionPrimary,
+              opacity:
+                record.activity.finalPhotos.length === 0 || isGenerating
+                  ? 0.45
+                  : pressed
+                    ? 0.92
+                    : 1,
+            },
+          ]}
         >
-          <View style={styles.shutterInner} />
-        </TouchableOpacity>
+          <Text style={[styles.submitButtonText, { color: theme.actionText }]}>
+            {isGenerating ? 'Generating Report…' : 'Generate Report'}
+          </Text>
+        </Pressable>
 
         <Pressable
           accessibilityRole="button"
-          onPress={handleDone}
-          style={({ pressed }) => [styles.doneButton, pressed ? styles.pressed : null]}
+          onPress={handleAddPhoto}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            {
+              backgroundColor: theme.mutedButton,
+              opacity:
+                record.activity.finalPhotos.length >= MAX_FINAL_PHOTOS
+                  ? 0.45
+                  : pressed
+                    ? 0.92
+                    : 1,
+            },
+          ]}
+          disabled={record.activity.finalPhotos.length >= MAX_FINAL_PHOTOS}
         >
-          <Text style={styles.doneText}>Done</Text>
+          <Text style={[styles.secondaryButtonText, { color: theme.mutedButtonText }]}>
+            Add Another Photo
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>
   );
 }
 
-function CameraView() {
-  return (
-    <View style={styles.permissionFallback}>
-      <Text style={styles.permissionText}>Camera preview unavailable in Expo Go</Text>
-      <Text style={styles.permissionSubtext}>You can still add mock photos to continue the flow.</Text>
-    </View>
-  );
-}
+async function launchCameraCapture() {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
 
-function CornerBrackets() {
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <BracketCorner position="topLeft" />
-      <BracketCorner position="topRight" />
-      <BracketCorner position="bottomLeft" />
-      <BracketCorner position="bottomRight" />
-    </View>
-  );
-}
+  if (permission.status !== 'granted') {
+    Alert.alert('Camera Access Required', 'Allow camera access to take a photo for this job.');
 
-function BracketCorner({
-  position,
-}: {
-  position: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
-}) {
-  const isTop = position.includes('top');
-  const isLeft = position.includes('Left');
-
-  return (
-    <View
-      style={[
-        styles.bracketCorner,
-        isTop ? styles.cornerTop : styles.cornerBottom,
-        isLeft ? styles.cornerLeft : styles.cornerRight,
-      ]}
-    >
-      <View
-        style={[
-          styles.bracketArmHorizontal,
-          isTop ? styles.bracketArmTop : styles.bracketArmBottom,
-        ]}
-      />
-      <View
-        style={[
-          styles.bracketArmVertical,
-          isLeft ? styles.bracketArmLeft : styles.bracketArmRight,
-        ]}
-      />
-    </View>
-  );
-}
-
-async function requestCameraAccess() {
-  if (Platform.OS === 'android') {
-    const result = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-    );
-
-    return result === PermissionsAndroid.RESULTS.GRANTED;
+    return {
+      assets: null,
+      canceled: true,
+    } as ImagePicker.ImagePickerResult;
   }
 
-  return true;
-}
-
-async function takePhoto(cameraInstance: any) {
-  void cameraInstance;
-  return `mock://capture-${Date.now()}.jpg`;
-}
-
-function getNextTag(currentTag: PhotoTag): PhotoTag {
-  const currentIndex = TAGS.indexOf(currentTag);
-  return TAGS[(currentIndex + 1) % TAGS.length];
+  return ImagePicker.launchCameraAsync({
+    allowsEditing: false,
+    cameraType: ImagePicker.CameraType.back,
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.8,
+  });
 }
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: SCREEN_BACKGROUND,
     flex: 1,
+  },
+  notFoundScreen: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  notFoundText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
     alignItems: 'center',
-    backgroundColor: SCREEN_BACKGROUND,
-    borderBottomWidth: 0.5,
+    borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingBottom: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
   },
-  headerSide: {
-    minWidth: 56,
+  headerActionWrap: {
+    minWidth: 48,
   },
   headerAction: {
-    color: MUTED_TEXT,
-    fontSize: 13,
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 17,
+    fontWeight: '700',
   },
-  viewfinderShell: {
-    flex: 1,
+  pressed: {
+    opacity: 0.72,
   },
-  viewfinder: {
-    backgroundColor: SCREEN_BACKGROUND,
-    flex: 1,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  permissionFallback: {
-    alignItems: 'center',
-    backgroundColor: SCREEN_BACKGROUND,
-    flex: 1,
-    justifyContent: 'center',
-  },
-  permissionText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  permissionSubtext: {
-    color: MUTED_TEXT,
-    fontSize: 13,
-    marginTop: 8,
-    paddingHorizontal: 24,
-    textAlign: 'center',
-  },
-  flashOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: FLASH_COLOR,
-  },
-  bracketCorner: {
-    height: 18,
-    position: 'absolute',
-    width: 18,
-  },
-  cornerTop: {
-    top: 0,
-  },
-  cornerBottom: {
-    bottom: 0,
-  },
-  cornerLeft: {
-    left: 0,
-  },
-  cornerRight: {
-    right: 0,
-  },
-  bracketArmHorizontal: {
-    backgroundColor: BRACKET_COLOR,
-    height: 2,
-    position: 'absolute',
-    width: 18,
-  },
-  bracketArmVertical: {
-    backgroundColor: BRACKET_COLOR,
-    height: 18,
-    position: 'absolute',
-    width: 2,
-  },
-  bracketArmTop: {
-    top: 0,
-  },
-  bracketArmBottom: {
-    bottom: 0,
-  },
-  bracketArmLeft: {
-    left: 0,
-  },
-  bracketArmRight: {
-    right: 0,
-  },
-  tagSelector: {
-    alignItems: 'center',
-    backgroundColor: SCREEN_BACKGROUND,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginVertical: 12,
+  scrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 16,
   },
-  tagPill: {
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 16,
+  summaryCard: {
+    borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    overflow: 'hidden',
   },
-  tagPillTrailing: {
-    marginLeft: 8,
-  },
-  tagPillSelected: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#FFFFFF',
-  },
-  tagText: {
-    color: MUTED_TEXT,
-    fontSize: 12,
-  },
-  tagTextSelected: {
-    color: SCREEN_BACKGROUND,
-  },
-  captureBar: {
-    alignItems: 'center',
-    backgroundColor: SCREEN_BACKGROUND,
+  summaryHeader: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
-  captureBarPadding: {
-    paddingBottom: 12,
+  summaryHeaderText: {
+    flex: 1,
+    marginRight: 12,
   },
-  thumbnailStrip: {
-    maxWidth: 140,
+  jobTitle: {
+    fontSize: 22,
+    fontWeight: '700',
   },
-  thumbnailScrollContent: {
-    alignItems: 'center',
+  jobMeta: {
+    fontSize: 14,
+    marginTop: 6,
   },
-  thumbnail: {
-    borderColor: 'transparent',
-    borderRadius: 4,
-    borderWidth: 1.5,
-    height: 40,
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryRow: {
+    borderTopWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  summaryValue: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  sectionBlock: {
+    marginTop: 22,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  helperText: {
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  photoTile: {
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 138,
     overflow: 'hidden',
-    width: 52,
+    position: 'relative',
+    width: '48%',
   },
-  thumbnailTrailing: {
-    marginLeft: 8,
-  },
-  thumbnailImage: {
+  photoImage: {
     height: '100%',
     width: '100%',
   },
-  thumbnailFallback: {
+  photoBadge: {
     alignItems: 'center',
-    flex: 1,
+    borderRadius: 999,
+    height: 28,
     justifyContent: 'center',
-  },
-  thumbnailFallbackText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  thumbnailLabel: {
-    backgroundColor: 'rgba(0,0,0,0.24)',
-    borderRadius: 3,
-    bottom: 2,
-    left: 2,
-    paddingHorizontal: 2,
     position: 'absolute',
-    paddingVertical: 1,
+    right: 10,
+    top: 10,
+    width: 28,
   },
-  thumbnailLabelText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '500',
+  photoBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  shutterOuter: {
+  addPhotoTile: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderColor: '#FFFFFF',
-    borderRadius: 34,
-    borderWidth: 3,
-    height: 68,
+    borderRadius: 20,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    height: 138,
     justifyContent: 'center',
-    width: 68,
+    overflow: 'hidden',
+    width: '48%',
   },
-  shutterInner: {
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    height: 52,
-    width: 52,
   },
-  doneButton: {
-    alignItems: 'flex-end',
-    minWidth: 52,
-    paddingHorizontal: 12,
+  addPhotoIcon: {
+    fontSize: 30,
+    fontWeight: '300',
+    lineHeight: 34,
   },
-  doneText: {
-    color: MUTED_TEXT,
-    fontSize: 13,
+  addPhotoText: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
   },
-  pressed: {
-    opacity: 0.82,
+  addPhotoSubtext: {
+    fontSize: 12,
+    marginTop: 6,
+  },
+  notesCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    minHeight: 132,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  notesInput: {
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 100,
+  },
+  ctaBar: {
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    position: 'absolute',
+    right: 0,
+  },
+  submitButton: {
+    alignItems: 'center',
+    borderRadius: 18,
+    justifyContent: 'center',
+    minHeight: 56,
+  },
+  submitButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderRadius: 16,
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 50,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

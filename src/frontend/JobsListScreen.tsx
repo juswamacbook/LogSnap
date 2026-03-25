@@ -13,17 +13,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled';
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-};
+import { useJobSession } from './JobSessionContext';
+import { Job, JobStatus } from './jobData';
 
 type RootStackParamList = {
   JobsList: undefined;
@@ -42,14 +33,14 @@ type ThemeColors = {
   actionPrimary: string;
   actionText: string;
   highlightBorder: string;
-  statusOverdueBackground: string;
-  statusOverdueText: string;
-  statusStartingSoonBackground: string;
-  statusStartingSoonText: string;
+  statusDefaultBackground: string;
+  statusDefaultText: string;
   statusInProgressBackground: string;
   statusInProgressText: string;
-  statusScheduledBackground: string;
-  statusScheduledText: string;
+  statusAwaitingBackground: string;
+  statusAwaitingText: string;
+  statusCompletedBackground: string;
+  statusCompletedText: string;
 };
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
@@ -58,19 +49,19 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     surface: '#FFFFFF',
     textPrimary: '#111111',
     textSecondary: '#6B6B6B',
-    textHint: '#AAAAAA',
+    textHint: '#8E8E93',
     borderSecondary: 'rgba(0,0,0,0.15)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
     highlightBorder: '#185FA5',
-    statusOverdueBackground: '#FCEBEB',
-    statusOverdueText: '#A32D2D',
-    statusStartingSoonBackground: '#E6F1FB',
-    statusStartingSoonText: '#185FA5',
+    statusDefaultBackground: '#F1EFE8',
+    statusDefaultText: '#5F5E5A',
     statusInProgressBackground: '#EAF3DE',
     statusInProgressText: '#3B6D11',
-    statusScheduledBackground: '#F1EFE8',
-    statusScheduledText: '#5F5E5A',
+    statusAwaitingBackground: '#E6F1FB',
+    statusAwaitingText: '#185FA5',
+    statusCompletedBackground: '#EAF3DE',
+    statusCompletedText: '#3B6D11',
   },
   dark: {
     background: '#111111',
@@ -82,78 +73,82 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
     highlightBorder: '#185FA5',
-    statusOverdueBackground: '#FCEBEB',
-    statusOverdueText: '#A32D2D',
-    statusStartingSoonBackground: '#E6F1FB',
-    statusStartingSoonText: '#185FA5',
+    statusDefaultBackground: '#2B2B2F',
+    statusDefaultText: '#C6C6C9',
     statusInProgressBackground: '#EAF3DE',
     statusInProgressText: '#3B6D11',
-    statusScheduledBackground: '#F1EFE8',
-    statusScheduledText: '#5F5E5A',
+    statusAwaitingBackground: '#E6F1FB',
+    statusAwaitingText: '#185FA5',
+    statusCompletedBackground: '#EAF3DE',
+    statusCompletedText: '#3B6D11',
   },
 };
 
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-  },
-];
+function getStatusStyle(theme: ThemeColors, status: JobStatus) {
+  switch (status) {
+    case 'in_progress':
+      return {
+        container: {
+          backgroundColor: theme.statusInProgressBackground,
+        },
+        text: {
+          color: theme.statusInProgressText,
+        },
+        label: 'Active',
+      };
+    case 'awaiting_completion_upload':
+      return {
+        container: {
+          backgroundColor: theme.statusAwaitingBackground,
+        },
+        text: {
+          color: theme.statusAwaitingText,
+        },
+        label: 'Add Final Photos',
+      };
+    case 'completed':
+      return {
+        container: {
+          backgroundColor: theme.statusCompletedBackground,
+        },
+        text: {
+          color: theme.statusCompletedText,
+        },
+        label: 'Report Ready',
+      };
+    case 'not_started':
+    default:
+      return {
+        container: {
+          backgroundColor: theme.statusDefaultBackground,
+        },
+        text: {
+          color: theme.statusDefaultText,
+        },
+        label: 'Ready',
+      };
+  }
+}
 
-type JobsListScreenProps = {
-  jobs?: Job[];
-};
-
-type JobCardProps = {
-  colors: ThemeColors;
-  job: Job;
-  onPress: () => void;
-};
-
-type StatusBadgeProps = {
-  colors: ThemeColors;
-  status: JobStatus;
-};
-
-const STATUS_LABELS: Record<JobStatus, string> = {
-  overdue: 'Overdue',
-  starting_soon: 'Starting Soon',
-  in_progress: 'In Progress',
-  scheduled: 'Scheduled',
-};
-
-function StatusBadge({ colors, status }: StatusBadgeProps) {
-  const badgeStyles = getStatusBadgeStyle(colors, status);
+function StatusBadge({ theme, status }: { theme: ThemeColors; status: JobStatus }) {
+  const badge = getStatusStyle(theme, status);
 
   return (
-    <View style={[styles.badgeBase, badgeStyles.container]}>
-      <Text style={[styles.badgeTextBase, badgeStyles.text]}>{STATUS_LABELS[status]}</Text>
+    <View style={[styles.badgeBase, badge.container]}>
+      <Text style={[styles.badgeTextBase, badge.text]}>{badge.label}</Text>
     </View>
   );
 }
 
-function JobCard({ colors, job, onPress }: JobCardProps) {
+function JobCard({
+  job,
+  onPress,
+  theme,
+}: {
+  job: Job;
+  onPress: () => void;
+  theme: ThemeColors;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -161,51 +156,60 @@ function JobCard({ colors, job, onPress }: JobCardProps) {
       style={({ pressed }) => [
         styles.cardBase,
         {
-          backgroundColor: colors.surface,
-          borderColor: job.isHighlighted ? colors.highlightBorder : colors.borderSecondary,
-          borderWidth: job.isHighlighted ? 1.5 : StyleSheet.hairlineWidth,
+          backgroundColor: theme.surface,
+          borderColor:
+            job.status === 'in_progress' || job.isHighlighted
+              ? theme.highlightBorder
+              : theme.borderSecondary,
+          borderWidth:
+            job.status === 'in_progress' || job.isHighlighted ? 1.5 : StyleSheet.hairlineWidth,
           opacity: pressed ? 0.92 : 1,
         },
       ]}
     >
       <View style={styles.cardHeaderRow}>
-        <Text numberOfLines={1} style={[styles.siteName, { color: colors.textPrimary }]}>
+        <Text numberOfLines={1} style={[styles.siteName, { color: theme.textPrimary }]}>
           {job.siteName}
         </Text>
-        <StatusBadge colors={colors} status={job.status} />
+        <StatusBadge status={job.status} theme={theme} />
       </View>
 
-      <Text numberOfLines={1} style={[styles.address, { color: colors.textSecondary }]}>
+      <Text numberOfLines={1} style={[styles.address, { color: theme.textSecondary }]}>
         {job.address}
       </Text>
 
-      <Text style={[styles.jobMeta, { color: colors.textHint }]}>
+      <Text style={[styles.jobMeta, { color: theme.textHint }]}>
         {job.timeWindow} {'\u2022'} {job.jobType}
       </Text>
     </Pressable>
   );
 }
 
-export default function JobsListScreen({ jobs = JOBS }: JobsListScreenProps) {
+export default function JobsListScreen() {
   const navigation = useNavigation<Navigation>();
   const insets = useSafeAreaInsets();
+  const { records } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const nextJob =
-    jobs.find((job) => job.status === 'in_progress') ??
-    jobs.find((job) => job.isHighlighted) ??
-    jobs[0];
+  const jobs = records.map((record) => record.job);
+  const activeJob = jobs.find((job) => job.status === 'in_progress');
+  const awaitingUploadJob = jobs.find((job) => job.status === 'awaiting_completion_upload');
+  const nextJob = activeJob ?? awaitingUploadJob ?? jobs.find((job) => job.isHighlighted) ?? jobs[0];
   const statusBarStyle = colorScheme === 'dark' ? 'light-content' : 'dark-content';
   const ctaLabel =
     nextJob?.status === 'in_progress'
       ? `Resume Job — ${nextJob.siteName}`
-      : `Start Next Job — ${nextJob?.siteName ?? ''}`;
-
-  const handleOpenJob = (jobId: string) => {
-    navigation.navigate('JobDetail', { jobId });
-  };
+      : nextJob?.status === 'awaiting_completion_upload'
+        ? `Add Final Photos — ${nextJob.siteName}`
+        : `Start Job — ${nextJob?.siteName ?? ''}`;
+  const ctaHint =
+    nextJob?.status === 'in_progress'
+      ? 'Passive tracking is running. Finish when the work is done.'
+      : nextJob?.status === 'awaiting_completion_upload'
+        ? 'The timer is closed. Add final proof-of-work photos and create the report.'
+        : 'Open the next stop and start the session with one tap.';
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
@@ -227,17 +231,21 @@ export default function JobsListScreen({ jobs = JOBS }: JobsListScreenProps) {
       >
         <Text style={[styles.appLabel, { color: theme.textSecondary }]}>LOGSNAP</Text>
         <Text style={[styles.title, { color: theme.textPrimary }]}>{"Today's Jobs"}</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          Start work quickly, let the timer run, then finish with final site photos.
+        </Text>
       </View>
 
       <FlatList
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: 80 + insets.bottom },
-        ]}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 136 + insets.bottom }]}
         data={jobs}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <JobCard colors={theme} job={item} onPress={() => handleOpenJob(item.id)} />
+          <JobCard
+            job={item}
+            onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
+            theme={theme}
+          />
         )}
         showsVerticalScrollIndicator={false}
       />
@@ -252,49 +260,24 @@ export default function JobsListScreen({ jobs = JOBS }: JobsListScreenProps) {
           },
         ]}
       >
+        <Text style={[styles.ctaHint, { color: theme.textSecondary }]}>{ctaHint}</Text>
         <Pressable
           accessibilityRole="button"
           disabled={!nextJob}
-          onPress={() => nextJob && handleOpenJob(nextJob.id)}
+          onPress={() => nextJob && navigation.navigate('JobDetail', { jobId: nextJob.id })}
           style={({ pressed }) => [
             styles.ctaButton,
             {
               backgroundColor: theme.actionPrimary,
-              opacity: pressed || !nextJob ? 0.92 : 1,
+              opacity: nextJob ? (pressed ? 0.92 : 1) : 0.5,
             },
           ]}
         >
-          <Text style={[styles.ctaText, { color: theme.actionText }]}>{ctaLabel}</Text>
+          <Text style={[styles.ctaButtonText, { color: theme.actionText }]}>{ctaLabel}</Text>
         </Pressable>
       </View>
     </View>
   );
-}
-
-function getStatusBadgeStyle(colors: ThemeColors, status: JobStatus) {
-  switch (status) {
-    case 'overdue':
-      return {
-        container: { backgroundColor: colors.statusOverdueBackground },
-        text: { color: colors.statusOverdueText },
-      };
-    case 'starting_soon':
-      return {
-        container: { backgroundColor: colors.statusStartingSoonBackground },
-        text: { color: colors.statusStartingSoonText },
-      };
-    case 'in_progress':
-      return {
-        container: { backgroundColor: colors.statusInProgressBackground },
-        text: { color: colors.statusInProgressText },
-      };
-    case 'scheduled':
-    default:
-      return {
-        container: { backgroundColor: colors.statusScheduledBackground },
-        text: { color: colors.statusScheduledText },
-      };
-  }
 }
 
 const styles = StyleSheet.create({
@@ -302,74 +285,88 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    borderBottomWidth: 0.5,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
   },
   appLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.66,
-    marginBottom: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '500',
-    lineHeight: 24,
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingTop: 18,
   },
   cardBase: {
-    borderRadius: 12,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 22,
+    marginBottom: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
   cardHeaderRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
   },
   siteName: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 20,
+    fontWeight: '700',
     marginRight: 12,
   },
   address: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 6,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 10,
   },
   jobMeta: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 13,
+    marginTop: 8,
   },
   badgeBase: {
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   badgeTextBase: {
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   ctaBar: {
-    borderTopWidth: 0.5,
-    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 20,
     paddingTop: 12,
+    position: 'absolute',
+    right: 0,
+  },
+  ctaHint: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 12,
   },
   ctaButton: {
-    borderRadius: 12,
-    paddingVertical: 16,
-    width: '100%',
+    alignItems: 'center',
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 17,
   },
-  ctaText: {
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
+  ctaButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

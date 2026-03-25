@@ -1,15 +1,4 @@
-import {
-  CapturedPhoto,
-  ChecklistState,
-  Job,
-  JobRecord,
-} from './types';
-
-const defaultChecklist = (): ChecklistState => ({
-  beforePhoto: false,
-  issueNoted: false,
-  afterPhoto: false,
-});
+import { FinalPhoto, Job, JobRecord } from './types';
 
 const jobs: Job[] = [
   {
@@ -18,7 +7,7 @@ const jobs: Job[] = [
     address: '4510 Ridgewood Ave, Unit B',
     timeWindow: '10:00 – 11:30 AM',
     jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
+    status: 'not_started',
     isHighlighted: true,
     contactName: 'Ron Fielding',
     phone: '(416) 555-0188',
@@ -32,7 +21,7 @@ const jobs: Job[] = [
     address: '78 Commerce Blvd',
     timeWindow: '8:00 – 9:30 AM',
     jobType: 'Backflow Test',
-    status: 'overdue',
+    status: 'not_started',
     contactName: 'Elena Torres',
     phone: '(416) 555-0142',
     issue:
@@ -45,7 +34,7 @@ const jobs: Job[] = [
     address: '112 Elmwood Dr',
     timeWindow: '1:00 – 2:30 PM',
     jobType: 'Zone Inspection',
-    status: 'scheduled',
+    status: 'not_started',
     contactName: 'Marcus Chen',
     phone: '(416) 555-0176',
     issue:
@@ -58,12 +47,11 @@ const records = new Map<string, JobRecord>(
   jobs.map((job) => [
     job.id,
     {
-      job,
       activity: {
-        checklistState: defaultChecklist(),
-        notes: [],
-        photos: [],
+        completionNote: '',
+        finalPhotos: [],
       },
+      job,
     },
   ]),
 );
@@ -88,77 +76,72 @@ export function startJob(jobId: string, startTime: number) {
   return record;
 }
 
-export function addJobNote(jobId: string, note: string) {
+export function setJobCompletionNote(jobId: string, note: string) {
   const record = getJobRecord(jobId);
 
   if (!record) {
     return null;
   }
 
-  record.activity.notes.push(note);
-  record.activity.checklistState.issueNoted = true;
+  record.activity.completionNote = note;
   return record;
 }
 
-export function addJobPhotos(jobId: string, photos: CapturedPhoto[]) {
+export function addFinalJobPhotos(jobId: string, photos: FinalPhoto[]) {
   const record = getJobRecord(jobId);
 
   if (!record) {
     return null;
   }
 
-  record.activity.photos.push(...photos);
-
-  for (const photo of photos) {
-    if (photo.tag === 'Before') {
-      record.activity.checklistState.beforePhoto = true;
-    }
-    if (photo.tag === 'After') {
-      record.activity.checklistState.afterPhoto = true;
-    }
-  }
-
+  record.activity.finalPhotos.push(...photos);
   return record;
 }
 
-export function updateChecklist(jobId: string, checklistState: Partial<ChecklistState>) {
+export function finishJob(jobId: string, endTime: number) {
   const record = getJobRecord(jobId);
 
   if (!record) {
     return null;
   }
 
-  record.activity.checklistState = {
-    ...record.activity.checklistState,
-    ...checklistState,
-  };
-
-  return record;
-}
-
-export function completeJob(jobId: string, endTime: number) {
-  const record = getJobRecord(jobId);
-
-  if (!record) {
-    return null;
-  }
-
-  record.job.status = 'completed';
+  record.job.status = 'awaiting_completion_upload';
   record.activity.endTime = endTime;
   return record;
 }
 
-export function submitJob(jobId: string, submittedAt: number) {
+export function submitJob(
+  jobId: string,
+  payload: {
+    endTime?: number;
+    completionNote?: string;
+    photos?: FinalPhoto[];
+    submittedAt: number;
+  },
+) {
   const record = getJobRecord(jobId);
 
   if (!record) {
     return null;
   }
 
-  record.activity.submittedAt = submittedAt;
-  if (!record.activity.endTime) {
-    record.activity.endTime = submittedAt;
+  if (payload.endTime) {
+    record.activity.endTime = payload.endTime;
   }
+
+  if (typeof payload.completionNote === 'string') {
+    record.activity.completionNote = payload.completionNote;
+  }
+
+  if (payload.photos && payload.photos.length > 0) {
+    record.activity.finalPhotos.push(...payload.photos);
+  }
+
+  if (!record.activity.endTime) {
+    record.activity.endTime = payload.submittedAt;
+  }
+
+  record.activity.submittedAt = payload.submittedAt;
   record.job.status = 'completed';
   return record;
 }

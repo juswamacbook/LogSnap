@@ -15,46 +15,13 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled';
-type PhotoTag = 'Before' | 'During' | 'After';
-
-type CapturedPhoto = {
-  uri: string;
-  tag: PhotoTag;
-  timestamp: number;
-};
-
-type ChecklistState = {
-  beforePhoto: boolean;
-  issueNoted: boolean;
-  afterPhoto: boolean;
-};
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-  phone: string;
-  contactName: string;
-  issue: string;
-  zoneLabel: string;
-};
+import { useJobSession } from './JobSessionContext';
+import { formatDurationFromMs } from './jobData';
 
 type RootStackParamList = {
-  ActiveJob: { jobId: string; startTime?: number; newPhotos?: CapturedPhoto[] };
-  ReviewReport: {
-    jobId: string;
-    startTime: number;
-    endTime?: number;
-    notes: string[];
-    photos: CapturedPhoto[];
-    checklistState: ChecklistState;
-  };
-  Success: { jobId: string; duration: number };
+  PhotoCapture: { jobId: string };
+  ReviewReport: { jobId: string };
+  Success: { jobId: string };
 };
 
 type Navigation = NativeStackNavigationProp<RootStackParamList, 'ReviewReport'>;
@@ -70,76 +37,9 @@ type ThemeColors = {
   borderSecondary: string;
   actionPrimary: string;
   actionText: string;
-  linkPrimary: string;
-  badgeBackground: string;
-  badgeText: string;
-  warningBackground: string;
-  warningText: string;
-  missingPhotoBorder: string;
-  missingPhotoBackground: string;
-  missingPhotoText: string;
-  photoBadgeBackground: string;
-  photoBadgeText: string;
+  accentBackground: string;
+  accentText: string;
 };
-
-type ReportRowProps = {
-  colors: ThemeColors;
-  label: string;
-  value: string;
-};
-
-type PhotoTileProps = {
-  photo: CapturedPhoto | null;
-  label: PhotoTag;
-  isMissing: boolean;
-  colors: ThemeColors;
-};
-
-const BACK_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-    contactName: 'Ron Fielding',
-    phone: '(416) 555-0188',
-    issue:
-      'Zone 3 not activating. Possible solenoid failure or broken line near south bed.',
-    zoneLabel: 'Zone 3',
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-    contactName: 'Elena Torres',
-    phone: '(416) 555-0142',
-    issue:
-      'Annual backflow inspection required after a failed valve reading last service cycle.',
-    zoneLabel: 'Main Valve',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-    contactName: 'Marcus Chen',
-    phone: '(416) 555-0176',
-    issue:
-      'Resident reported uneven coverage along the east lawn. Inspect heads, pressure, and timer programming.',
-    zoneLabel: 'East Lawn',
-  },
-];
-
-const PHOTO_TAGS: PhotoTag[] = ['Before', 'During', 'After'];
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
@@ -148,20 +48,12 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     surfaceSecondary: '#F4F6F8',
     textPrimary: '#111111',
     textSecondary: '#6B6B6B',
-    textHint: '#AAAAAA',
+    textHint: '#8E8E93',
     borderSecondary: 'rgba(0,0,0,0.15)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    linkPrimary: '#185FA5',
-    badgeBackground: '#EAF3DE',
-    badgeText: '#3B6D11',
-    warningBackground: '#FAEEDA',
-    warningText: '#633806',
-    missingPhotoBorder: '#EF9F27',
-    missingPhotoBackground: '#FAEEDA',
-    missingPhotoText: '#854F0B',
-    photoBadgeBackground: 'rgba(0,0,0,0.45)',
-    photoBadgeText: '#FFFFFF',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
   },
   dark: {
     background: '#111111',
@@ -173,118 +65,51 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     borderSecondary: 'rgba(255,255,255,0.12)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    linkPrimary: '#185FA5',
-    badgeBackground: '#EAF3DE',
-    badgeText: '#3B6D11',
-    warningBackground: '#FAEEDA',
-    warningText: '#633806',
-    missingPhotoBorder: '#EF9F27',
-    missingPhotoBackground: '#FAEEDA',
-    missingPhotoText: '#854F0B',
-    photoBadgeBackground: 'rgba(0,0,0,0.45)',
-    photoBadgeText: '#FFFFFF',
+    accentBackground: '#EAF3DE',
+    accentText: '#3B6D11',
   },
 };
-
-function ReportRow({ colors, label, value }: ReportRowProps) {
-  return (
-    <View style={[styles.reportRow, { borderBottomColor: colors.borderSecondary }]}>
-      <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.reportValue, { color: colors.textPrimary }]}>{value}</Text>
-    </View>
-  );
-}
-
-function PhotoTile({ photo, label, isMissing, colors }: PhotoTileProps) {
-  if (isMissing) {
-    return (
-      <View
-        style={[
-          styles.photoTile,
-          styles.photoTileMissing,
-          {
-            backgroundColor: colors.missingPhotoBackground,
-            borderColor: colors.missingPhotoBorder,
-          },
-        ]}
-      >
-        <Text style={[styles.photoTileMissingText, { color: colors.missingPhotoText }]}>
-          + {label}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.photoTile}>
-      {photo?.uri ? (
-        <Image resizeMode="cover" source={{ uri: photo.uri }} style={styles.photoImage} />
-      ) : (
-        <View style={[styles.photoFallback, { backgroundColor: colors.surfaceSecondary }]}>
-          <Text style={[styles.photoFallbackText, { color: colors.textSecondary }]}>{label}</Text>
-        </View>
-      )}
-      <View style={[styles.photoBadge, { backgroundColor: colors.photoBadgeBackground }]}>
-        <Text style={[styles.photoBadgeText, { color: colors.photoBadgeText }]}>
-          {label.slice(0, 3).toUpperCase()}
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 export default function ReviewReportScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<ReviewReportRoute>();
   const insets = useSafeAreaInsets();
+  const { getRecord, submitJob } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const job = JOBS.find((item) => item.id === route.params.jobId);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const endTime = route.params.endTime ?? Date.now();
+  const record = getRecord(route.params.jobId);
   const statusBarStyle = colorScheme === 'dark' ? 'light-content' : 'dark-content';
-  const missingItems: string[] = [];
 
-  if (!route.params.checklistState.beforePhoto) {
-    missingItems.push('before photo');
-  }
-  if (!route.params.checklistState.issueNoted) {
-    missingItems.push('issue note');
-  }
-  if (!route.params.checklistState.afterPhoto) {
-    missingItems.push('after photo');
-  }
-
-  const handleSubmitToJobber = async () => {
-    setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    setIsSubmitting(false);
-    navigation.navigate('Success', {
-      duration: endTime - route.params.startTime,
-      jobId: route.params.jobId,
-    });
-  };
-
-  if (!job) {
+  if (!record) {
     return (
       <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
-        <StatusBar
-          backgroundColor={theme.background}
-          barStyle={statusBarStyle}
-          translucent={false}
-        />
         <Text style={[styles.notFoundText, { color: theme.textPrimary }]}>Job not found</Text>
       </SafeAreaView>
     );
   }
 
+  const duration =
+    record.activity.startTime && record.activity.endTime
+      ? record.activity.endTime - record.activity.startTime
+      : 0;
+
+  const handleSubmitToJobber = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    submitJob(record.job.id);
+    setIsSubmitting(false);
+    navigation.replace('Success', { jobId: record.job.id });
+  };
+
   return (
-    <SafeAreaView
-      edges={['left', 'right']}
-      style={[styles.screen, { backgroundColor: theme.background }]}
-    >
+    <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]}>
       <StatusBar
         backgroundColor={theme.background}
         barStyle={statusBarStyle}
@@ -293,9 +118,8 @@ export default function ReviewReportScreen() {
 
       <View
         style={[
-          styles.navBar,
+          styles.header,
           {
-            backgroundColor: theme.background,
             borderBottomColor: theme.borderSecondary,
             paddingTop: insets.top,
           },
@@ -303,112 +127,104 @@ export default function ReviewReportScreen() {
       >
         <Pressable
           accessibilityRole="button"
-          hitSlop={BACK_BUTTON_HIT_SLOP}
           onPress={() => navigation.goBack()}
           style={({ pressed }) => [styles.backButton, pressed ? styles.pressed : null]}
         >
-          <Text style={[styles.backButtonText, { color: theme.linkPrimary }]}>&lt; Active Job</Text>
+          <Text style={[styles.backButtonText, { color: theme.textSecondary }]}>Back</Text>
         </Pressable>
-
-        <Text style={[styles.navTitle, { color: theme.textPrimary }]}>Review report</Text>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Submit to Jobber</Text>
+        <View style={styles.backButton} />
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: 120 + insets.bottom },
-        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 136 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.autoBadge, { backgroundColor: theme.badgeBackground }]}>
-          <Text style={[styles.autoBadgeText, { color: theme.badgeText }]}>
-            Auto-generated from captured activity
+        <View
+          style={[
+            styles.badge,
+            {
+              backgroundColor: theme.accentBackground,
+            },
+          ]}
+        >
+          <Text style={[styles.badgeText, { color: theme.accentText }]}>
+            Auto-generated from current job activity
           </Text>
         </View>
 
-        {missingItems.length > 0 ? (
-          <View style={[styles.missingAlert, { backgroundColor: theme.warningBackground }]}>
-            <Text style={[styles.missingAlertText, { color: theme.warningText }]}>
-              {`Missing: ${missingItems.join(', ')}. Add before submitting.`}
-            </Text>
-          </View>
-        ) : null}
+        <View
+          style={[
+            styles.sectionCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.borderSecondary,
+            },
+          ]}
+        >
+          <ReportRow label="Site" theme={theme} value={record.job.siteName} />
+          <ReportRow
+            label="Start"
+            theme={theme}
+            value={formatTime(record.activity.startTime)}
+          />
+          <ReportRow label="End" theme={theme} value={formatTime(record.activity.endTime)} />
+          <ReportRow label="Duration" theme={theme} value={formatDurationFromMs(duration)} />
+        </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>Job summary</Text>
-          <View style={[styles.sectionBody, { backgroundColor: theme.surface }]}>
-            <ReportRow colors={theme} label="Site" value={job.siteName} />
-            <ReportRow colors={theme} label="Start" value={formatTime(route.params.startTime)} />
-            <ReportRow colors={theme} label="End" value={formatTime(endTime)} />
-            <ReportRow
-              colors={theme}
-              label="Duration"
-              value={formatDuration(endTime - route.params.startTime)}
-            />
-            <ReportRow colors={theme} label="Outcome" value="Completed" />
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>VOICE NOTES</Text>
+          <View
+            style={[
+              styles.sectionCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderSecondary,
+              },
+            ]}
+          >
+            {record.activity.voiceNotes.length === 0 ? (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                No voice notes captured.
+              </Text>
+            ) : (
+              record.activity.voiceNotes.map((note, index) => (
+                <View
+                  key={note.id}
+                  style={[
+                    styles.noteRow,
+                    index > 0 ? { borderTopColor: theme.borderSecondary, borderTopWidth: 1 } : null,
+                  ]}
+                >
+                  <Text style={[styles.noteText, { color: theme.textPrimary }]}>{note.transcript}</Text>
+                  <Text style={[styles.noteMeta, { color: theme.textHint }]}>
+                    {note.mode === 'voice'
+                      ? `${formatDurationFromMs(note.durationSeconds * 1000)} · ${formatTime(note.savedAt)}`
+                      : `Saved ${formatTime(note.savedAt)}`}
+                  </Text>
+                </View>
+              ))
+            )}
           </View>
         </View>
 
         <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionLabel, { color: theme.textHint }]}>Notes</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => console.warn('Edit notes: not yet implemented')}
-              style={({ pressed }) => [pressed ? styles.pressed : null]}
-            >
-              <Text style={[styles.editLink, { color: theme.linkPrimary }]}>Edit</Text>
-            </Pressable>
-          </View>
-
-          {route.params.notes.length === 0 ? (
-            <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
-              No notes captured.
-            </Text>
-          ) : (
-            route.params.notes.map((note, index) => (
-              <Text
-                key={`${note}-${index}`}
+          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>PHOTOS</Text>
+          <View style={styles.photoGrid}>
+            {record.activity.finalPhotos.map((photo) => (
+              <View
+                key={photo.id}
                 style={[
-                  styles.noteText,
+                  styles.photoTile,
                   {
-                    borderBottomColor: theme.borderSecondary,
-                    color: theme.textPrimary,
+                    backgroundColor: theme.surface,
+                    borderColor: theme.borderSecondary,
                   },
                 ]}
               >
-                {`· ${note}`}
-              </Text>
-            ))
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: theme.textHint }]}>
-            {`Photos (${route.params.photos.length})`}
-          </Text>
-
-          <View style={styles.photoGrid}>
-            {PHOTO_TAGS.map((tag, index) => {
-              const matchedPhoto =
-                [...route.params.photos]
-                  .reverse()
-                  .find((photo) => photo.tag === tag) ?? null;
-
-              return (
-                <View
-                  key={tag}
-                  style={[styles.photoTileWrap, index > 0 ? styles.photoTileWrapGap : null]}
-                >
-                  <PhotoTile
-                    colors={theme}
-                    isMissing={!matchedPhoto}
-                    label={tag}
-                    photo={matchedPhoto}
-                  />
-                </View>
-              );
-            })}
+                <Image resizeMode="cover" source={{ uri: photo.uri }} style={styles.photoImage} />
+              </View>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -433,7 +249,7 @@ export default function ReviewReportScreen() {
             styles.submitButton,
             {
               backgroundColor: theme.actionPrimary,
-              opacity: isSubmitting ? 0.8 : pressed ? 0.92 : 1,
+              opacity: isSubmitting ? 0.72 : pressed ? 0.92 : 1,
             },
           ]}
         >
@@ -450,15 +266,32 @@ export default function ReviewReportScreen() {
   );
 }
 
-function formatTime(ms: number) {
-  return new Date(ms).toLocaleTimeString([], {
+function ReportRow({
+  label,
+  theme,
+  value,
+}: {
+  label: string;
+  theme: ThemeColors;
+  value: string;
+}) {
+  return (
+    <View style={[styles.reportRow, { borderBottomColor: theme.borderSecondary }]}>
+      <Text style={[styles.reportLabel, { color: theme.textHint }]}>{label}</Text>
+      <Text style={[styles.reportValue, { color: theme.textPrimary }]}>{value}</Text>
+    </View>
+  );
+}
+
+function formatTime(timestamp?: number) {
+  if (!timestamp) {
+    return 'Not recorded';
+  }
+
+  return new Date(timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function formatDuration(ms: number) {
-  return `${Math.round(ms / 60000)} min`;
 }
 
 const styles = StyleSheet.create({
@@ -472,170 +305,126 @@ const styles = StyleSheet.create({
   },
   notFoundText: {
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '600',
   },
-  navBar: {
-    borderBottomWidth: 0.5,
-    paddingBottom: 10,
+  header: {
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
     paddingHorizontal: 16,
   },
   backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
+    minWidth: 48,
   },
   backButtonText: {
     fontSize: 14,
-    fontWeight: '400',
+    fontWeight: '600',
   },
-  navTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    lineHeight: 24,
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  pressed: {
+    opacity: 0.72,
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 16,
   },
-  autoBadge: {
+  badge: {
     alignSelf: 'flex-start',
-    borderRadius: 4,
-    marginBottom: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  autoBadgeText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  missingAlert: {
-    borderRadius: 8,
-    marginBottom: 10,
+    borderRadius: 999,
+    marginBottom: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
-  missingAlertText: {
-    fontSize: 13,
-    lineHeight: 18,
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   section: {
-    marginBottom: 20,
-  },
-  sectionHeaderRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    marginTop: 20,
   },
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.55,
+    fontWeight: '700',
+    letterSpacing: 1,
     marginBottom: 8,
-    textTransform: 'uppercase',
+    paddingHorizontal: 4,
   },
-  sectionBody: {
-    width: '100%',
+  sectionCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   reportRow: {
-    alignItems: 'center',
-    borderBottomWidth: 0.5,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
+    borderBottomWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
   reportLabel: {
-    fontSize: 13,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   reportValue: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: 16,
-    textAlign: 'right',
+    fontSize: 15,
+    lineHeight: 22,
   },
-  editLink: {
-    fontSize: 12,
-    fontWeight: '500',
+  emptyText: {
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
-  emptyStateText: {
-    fontSize: 13,
-    lineHeight: 18,
+  noteRow: {
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
   noteText: {
-    borderBottomWidth: 0.5,
-    fontSize: 13,
-    lineHeight: 18,
-    paddingVertical: 8,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  noteMeta: {
+    fontSize: 12,
+    marginTop: 6,
   },
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 2,
-  },
-  photoTileWrap: {
-    marginBottom: 8,
-  },
-  photoTileWrapGap: {
-    marginLeft: 8,
+    gap: 12,
   },
   photoTile: {
-    borderRadius: 6,
-    height: 60,
-    overflow: 'hidden',
-    width: 80,
-  },
-  photoTileMissing: {
-    alignItems: 'center',
-    borderStyle: 'dashed',
+    borderRadius: 20,
     borderWidth: 1,
-    justifyContent: 'center',
-  },
-  photoTileMissingText: {
-    fontSize: 11,
-    fontWeight: '500',
+    height: 138,
+    overflow: 'hidden',
+    width: '48%',
   },
   photoImage: {
     height: '100%',
     width: '100%',
   },
-  photoFallback: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  photoFallbackText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  photoBadge: {
-    borderRadius: 3,
-    bottom: 4,
-    left: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    position: 'absolute',
-  },
-  photoBadgeText: {
-    fontSize: 9,
-    fontWeight: '500',
-  },
   ctaBar: {
-    borderTopWidth: 0.5,
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 14,
+    position: 'absolute',
+    right: 0,
   },
   submitButton: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 18,
     justifyContent: 'center',
-    paddingVertical: 16,
-    width: '100%',
+    minHeight: 56,
   },
   submitButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.92,
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

@@ -3,12 +3,11 @@ import {
   Animated,
   Appearance,
   Easing,
-  PermissionsAndroid,
-  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useColorScheme,
   View,
@@ -16,27 +15,13 @@ import {
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Audio } from 'expo-av';
 
-type JobStatus = 'overdue' | 'starting_soon' | 'in_progress' | 'scheduled';
-
-type Job = {
-  id: string;
-  siteName: string;
-  address: string;
-  timeWindow: string;
-  jobType: string;
-  status: JobStatus;
-  isHighlighted?: boolean;
-  phone: string;
-  contactName: string;
-  issue: string;
-  zoneLabel: string;
-};
+import { useJobSession } from './JobSessionContext';
 
 type VoiceMode = 'voice' | 'text';
 
 type RootStackParamList = {
-  ActiveJob: { jobId: string; startTime?: number };
   VoiceNote: { jobId: string; mode?: VoiceMode };
 };
 
@@ -60,75 +45,8 @@ type ThemeColors = {
   errorText: string;
 };
 
-type RecorderResult = {
-  start: () => Promise<void>;
-  stop: () => Promise<string | null>;
-  uri: string | null;
-  permissionDenied: boolean;
-};
-
-type RecorderAdapter = {
-  requestPermission: () => Promise<boolean>;
-  start: () => Promise<void>;
-  stop: () => Promise<string | null>;
-};
-
-type SavedNote = {
-  jobId: string;
-  mode: VoiceMode;
-  transcript: string;
-  uri: string | null;
-  savedAt: number;
-};
-
 const DEFAULT_TRANSCRIPT = 'Recording will appear here…';
-const FINAL_TRANSCRIPT = 'Zone 3 solenoid looks burned out, replacing now.';
-const PARTIAL_TRANSCRIPT = 'Zone 3 solenoid looks burned out…';
 const BACK_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
-const savedNotesStore: Record<string, SavedNote> = {};
-
-const JOBS: Job[] = [
-  {
-    id: '1',
-    siteName: 'Ridgewood Commons',
-    address: '4510 Ridgewood Ave, Unit B',
-    timeWindow: '10:00 – 11:30 AM',
-    jobType: 'Sprinkler Repair',
-    status: 'starting_soon',
-    isHighlighted: true,
-    contactName: 'Ron Fielding',
-    phone: '(416) 555-0188',
-    issue:
-      'Zone 3 not activating. Possible solenoid failure or broken line near south bed.',
-    zoneLabel: 'Zone 3',
-  },
-  {
-    id: '2',
-    siteName: 'Hartwell Plaza',
-    address: '78 Commerce Blvd',
-    timeWindow: '8:00 – 9:30 AM',
-    jobType: 'Backflow Test',
-    status: 'overdue',
-    contactName: 'Elena Torres',
-    phone: '(416) 555-0142',
-    issue:
-      'Annual backflow inspection required after a failed valve reading last service cycle.',
-    zoneLabel: 'Main Valve',
-  },
-  {
-    id: '3',
-    siteName: 'Elmwood Residential',
-    address: '112 Elmwood Dr',
-    timeWindow: '1:00 – 2:30 PM',
-    jobType: 'Zone Inspection',
-    status: 'scheduled',
-    contactName: 'Marcus Chen',
-    phone: '(416) 555-0176',
-    issue:
-      'Resident reported uneven coverage along the east lawn. Inspect heads, pressure, and timer programming.',
-    zoneLabel: 'East Lawn',
-  },
-];
 
 const colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
@@ -157,7 +75,7 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
     borderSecondary: 'rgba(255,255,255,0.12)',
     actionPrimary: '#0F2D54',
     actionText: '#FFFFFF',
-    linkPrimary: '#185FA5',
+    linkPrimary: '#8CB8E8',
     recordIdle: '#E24B4A',
     recordActive: '#A32D2D',
     recordRing: '#E24B4A',
@@ -165,74 +83,34 @@ const colors: Record<'light' | 'dark', ThemeColors> = {
   },
 };
 
-export function useRecorder(): RecorderResult {
-  const adapterRef = useRef<RecorderAdapter | null>(null);
-  const [uri, setUri] = useState<string | null>(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const configure = async () => {
-      const adapter = createRecorderAdapter();
-      adapterRef.current = adapter;
-      const granted = await adapter.requestPermission();
-
-      if (mounted) {
-        setPermissionDenied(!granted);
-      }
-    };
-
-    void configure();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const start = async () => {
-    if (!adapterRef.current) {
-      return;
-    }
-
-    await adapterRef.current.start();
-  };
-
-  const stop = async () => {
-    if (!adapterRef.current) {
-      return null;
-    }
-
-    const nextUri = await adapterRef.current.stop();
-    setUri(nextUri);
-    return nextUri;
-  };
-
-  return {
-    start,
-    stop,
-    uri,
-    permissionDenied,
-  };
-}
-
 export default function VoiceNoteScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<VoiceNoteRoute>();
   const insets = useSafeAreaInsets();
+  const { addVoiceNote, getRecord } = useJobSession();
   const colorScheme = (useColorScheme() ?? Appearance.getColorScheme() ?? 'light') as
     | 'light'
     | 'dark';
   const theme = colors[colorScheme];
-  const job = JOBS.find((item) => item.id === route.params.jobId);
+  const record = getRecord(route.params.jobId);
   const mode = route.params.mode ?? 'voice';
-  const recorder = useRecorder();
   const ringPulse = useRef(new Animated.Value(0)).current;
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [hasStopped, setHasStopped] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [transcript, setTranscript] = useState(DEFAULT_TRANSCRIPT);
+  const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const statusBarStyle = colorScheme === 'dark' ? 'light-content' : 'dark-content';
+
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        void recordingRef.current.stopAndUnloadAsync();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isRecording) {
@@ -278,87 +156,93 @@ export default function VoiceNoteScreen() {
     return () => clearInterval(timer);
   }, [isRecording]);
 
-  useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-
-    if (elapsedSeconds >= 5) {
-      setTranscript(FINAL_TRANSCRIPT);
-      return;
-    }
-
-    if (elapsedSeconds >= 2) {
-      setTranscript(PARTIAL_TRANSCRIPT);
-    }
-  }, [elapsedSeconds, isRecording]);
-
   const animatedBorderColor = ringPulse.interpolate({
     inputRange: [0, 1],
     outputRange: [withAlpha(theme.recordRing, 1), withAlpha(theme.recordRing, 0.3)],
   });
 
-  const handleToggleRecording = async () => {
-    if (recorder.permissionDenied) {
-      return;
-    }
-
-    if (!isRecording) {
-      setTranscript(DEFAULT_TRANSCRIPT);
-      setElapsedSeconds(0);
-      await recorder.start();
-      setHasStopped(false);
-      setIsRecording(true);
-      return;
-    }
-
-    await recorder.stop();
-    setIsRecording(false);
-    setHasStopped(true);
-  };
-
-  const handleSave = () => {
-    if (!hasStopped) {
-      return;
-    }
-
-    savedNotesStore[route.params.jobId] = {
-      jobId: route.params.jobId,
-      mode,
-      transcript,
-      uri: recorder.uri,
-      savedAt: Date.now(),
-    };
-
-    navigation.goBack();
-  };
-
-  let recordingHint = 'Tap to record';
-
-  if (isRecording) {
-    recordingHint = 'Recording… tap to stop';
-  } else if (hasStopped) {
-    recordingHint = 'Tap to record again';
-  }
-
-  if (!job) {
+  if (!record) {
     return (
       <SafeAreaView style={[styles.notFoundScreen, { backgroundColor: theme.background }]}>
-        <StatusBar
-          backgroundColor={theme.background}
-          barStyle={statusBarStyle}
-          translucent={false}
-        />
         <Text style={[styles.notFoundText, { color: theme.textPrimary }]}>Job not found</Text>
       </SafeAreaView>
     );
   }
 
+  const handleToggleRecording = async () => {
+    if (mode === 'text') {
+      return;
+    }
+
+    if (!isRecording) {
+      const granted = await requestRecordingPermission();
+
+      if (!granted) {
+        setPermissionDenied(true);
+        return;
+      }
+
+      const recording = new Audio.Recording();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      recordingRef.current = recording;
+      setPermissionDenied(false);
+      setRecordedUri(null);
+      setTranscript(DEFAULT_TRANSCRIPT);
+      setElapsedSeconds(0);
+      setHasStopped(false);
+      setIsRecording(true);
+      return;
+    }
+
+    const recording = recordingRef.current;
+
+    if (!recording) {
+      return;
+    }
+
+    await recording.stopAndUnloadAsync();
+    const status = await recording.getStatusAsync();
+    const uri = recording.getURI();
+    recordingRef.current = null;
+    setRecordedUri(uri ?? null);
+    setTranscript(buildVoiceSummary(record.job.zoneLabel, Math.max(1, elapsedSeconds)));
+    setElapsedSeconds(Math.max(1, Math.floor((status.durationMillis ?? 0) / 1000)));
+    setIsRecording(false);
+    setHasStopped(true);
+  };
+
+  const handleSave = () => {
+    const trimmedTranscript = transcript.trim();
+
+    if (mode === 'text' && !trimmedTranscript) {
+      return;
+    }
+
+    if (mode === 'voice' && !hasStopped) {
+      return;
+    }
+
+    addVoiceNote(record.job.id, {
+      durationSeconds: mode === 'voice' ? elapsedSeconds : 0,
+      id: `${Date.now()}`,
+      mode,
+      savedAt: Date.now(),
+      transcript:
+        mode === 'voice'
+          ? trimmedTranscript || buildVoiceSummary(record.job.zoneLabel, elapsedSeconds)
+          : trimmedTranscript,
+      uri: mode === 'voice' ? recordedUri : null,
+    });
+    navigation.goBack();
+  };
+
   return (
-    <SafeAreaView
-      edges={['left', 'right']}
-      style={[styles.screen, { backgroundColor: theme.background }]}
-    >
+    <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]}>
       <StatusBar
         backgroundColor={theme.background}
         barStyle={statusBarStyle}
@@ -384,64 +268,82 @@ export default function VoiceNoteScreen() {
           <Text style={[styles.navActionText, { color: theme.linkPrimary }]}>Cancel</Text>
         </Pressable>
 
-        <Text style={[styles.navTitle, { color: theme.textPrimary }]}>Voice note</Text>
+        <Text style={[styles.navTitle, { color: theme.textPrimary }]}>
+          {mode === 'voice' ? 'Voice note' : 'Issue note'}
+        </Text>
 
         <View style={styles.navSpacer} />
       </View>
 
       <View style={styles.content}>
-        <Text style={[styles.timerText, { color: theme.textPrimary }]}>
-          {formatDisplayTime(elapsedSeconds)}
-        </Text>
+        <Text style={[styles.jobName, { color: theme.textSecondary }]}>{record.job.siteName}</Text>
 
-        <Animated.View
-          style={[
-            styles.recordRing,
-            {
-              borderColor: isRecording ? animatedBorderColor : theme.recordRing,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            accessibilityRole="button"
-            activeOpacity={0.8}
-            onPress={() => {
-              void handleToggleRecording();
-            }}
-            style={[
-              styles.recordButton,
-              {
-                backgroundColor: isRecording ? theme.recordActive : theme.recordIdle,
-              },
-            ]}
-          >
-            <View
+        {mode === 'voice' ? (
+          <>
+            <Text style={[styles.timerText, { color: theme.textPrimary }]}>
+              {formatDisplayTime(elapsedSeconds)}
+            </Text>
+
+            <Animated.View
               style={[
-                styles.recordButtonGlyph,
-                isRecording ? styles.recordStopGlyph : null,
-                { backgroundColor: theme.actionText },
+                styles.recordRing,
+                {
+                  borderColor: isRecording ? animatedBorderColor : theme.recordRing,
+                },
               ]}
-            />
-          </TouchableOpacity>
-        </Animated.View>
+            >
+              <TouchableOpacity
+                accessibilityRole="button"
+                activeOpacity={0.8}
+                onPress={() => {
+                  void handleToggleRecording();
+                }}
+                style={[
+                  styles.recordButton,
+                  {
+                    backgroundColor: isRecording ? theme.recordActive : theme.recordIdle,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.recordButtonGlyph,
+                    isRecording ? styles.recordStopGlyph : null,
+                    { backgroundColor: theme.actionText },
+                  ]}
+                />
+              </TouchableOpacity>
+            </Animated.View>
 
-        <Text style={[styles.recordingHint, { color: theme.textSecondary }]}>
-          {recordingHint}
-        </Text>
+            <Text style={[styles.recordingHint, { color: theme.textSecondary }]}>
+              {isRecording ? 'Tap to stop recording' : 'Tap to start recording'}
+            </Text>
 
-        {recorder.permissionDenied ? (
-          <Text style={[styles.inlineError, { color: theme.errorText }]}>
-            Microphone access required.
-          </Text>
+            {permissionDenied ? (
+              <Text style={[styles.inlineError, { color: theme.errorText }]}>
+                Microphone access required.
+              </Text>
+            ) : null}
+          </>
         ) : null}
 
         <View style={[styles.transcriptCard, { backgroundColor: theme.surfaceSecondary }]}>
           <Text style={[styles.transcriptLabel, { color: theme.textHint }]}>
-            Transcript preview
+            {mode === 'voice' ? 'Transcript preview' : 'Issue note'}
           </Text>
-          <Text style={[styles.transcriptBody, { color: theme.textSecondary }]}>
-            {transcript}
-          </Text>
+          {mode === 'voice' ? (
+            <Text style={[styles.transcriptBody, { color: theme.textSecondary }]}>{transcript}</Text>
+          ) : (
+            <TextInput
+              multiline
+              onChangeText={setTranscript}
+              placeholder="Describe the issue"
+              placeholderTextColor={theme.textHint}
+              style={[styles.transcriptInput, { color: theme.textPrimary }]}
+              textAlignVertical="top"
+              value={transcript === DEFAULT_TRANSCRIPT ? '' : transcript}
+            />
+          )}
         </View>
       </View>
 
@@ -473,19 +375,28 @@ export default function VoiceNoteScreen() {
 
           <Pressable
             accessibilityRole="button"
-            disabled={!hasStopped}
+            disabled={mode === 'voice' ? !hasStopped : transcript.trim().length === 0}
             onPress={handleSave}
             style={({ pressed }) => [
               styles.primaryButton,
               {
                 backgroundColor: theme.actionPrimary,
-                opacity: !hasStopped ? 0.4 : pressed ? 0.92 : 1,
+                opacity:
+                  mode === 'voice'
+                    ? !hasStopped
+                      ? 0.4
+                      : pressed
+                        ? 0.92
+                        : 1
+                    : transcript.trim().length === 0
+                      ? 0.4
+                      : pressed
+                        ? 0.92
+                        : 1,
               },
             ]}
           >
-            <Text style={[styles.primaryButtonText, { color: theme.actionText }]}>
-              Save note
-            </Text>
+            <Text style={[styles.primaryButtonText, { color: theme.actionText }]}>Save note</Text>
           </Pressable>
         </View>
       </View>
@@ -493,77 +404,13 @@ export default function VoiceNoteScreen() {
   );
 }
 
-function createRecorderAdapter(): RecorderAdapter {
-  return createMockRecorderAdapter();
+async function requestRecordingPermission() {
+  const permission = await Audio.requestPermissionsAsync();
+  return permission.status === 'granted';
 }
 
-function createExpoRecorderAdapter(AudioModule: any): RecorderAdapter {
-  let recording: any = null;
-
-  return {
-    requestPermission: async () => {
-      const result = await AudioModule.requestPermissionsAsync();
-      return result.status === 'granted';
-    },
-    start: async () => {
-      await AudioModule.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const created = new AudioModule.Recording();
-      await created.prepareToRecordAsync(
-        AudioModule.RecordingOptionsPresets?.HIGH_QUALITY ??
-          AudioModule.RecordingOptionsPresets?.LOW_QUALITY,
-      );
-      await created.startAsync();
-      recording = created;
-    },
-    stop: async () => {
-      if (!recording) {
-        return null;
-      }
-
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI?.() ?? null;
-      recording = null;
-      return uri;
-    },
-  };
-}
-
-function createAudioRecorderPlayerAdapter(moduleRef: any): RecorderAdapter {
-  const RecorderClass = moduleRef.default ?? moduleRef;
-  const recorder = typeof RecorderClass === 'function' ? new RecorderClass() : RecorderClass;
-
-  return {
-    requestPermission: async () => {
-      if (Platform.OS !== 'android') {
-        return true;
-      }
-
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      );
-
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    },
-    start: async () => {
-      await recorder.startRecorder?.();
-    },
-    stop: async () => {
-      const uri = await recorder.stopRecorder?.();
-      return uri ?? null;
-    },
-  };
-}
-
-function createMockRecorderAdapter(): RecorderAdapter {
-  return {
-    requestPermission: async () => true,
-    start: async () => undefined,
-    stop: async () => `mock://voice-note-${Date.now()}.m4a`,
-  };
+function buildVoiceSummary(zoneLabel: string, durationSeconds: number) {
+  return `Voice note recorded for ${zoneLabel}. Duration ${formatDisplayTime(durationSeconds)}.`;
 }
 
 function formatDisplayTime(totalSeconds: number) {
@@ -631,6 +478,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
   },
+  jobName: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
   timerText: {
     fontSize: 28,
     fontVariant: ['tabular-nums'],
@@ -679,6 +531,7 @@ const styles = StyleSheet.create({
   transcriptCard: {
     borderRadius: 12,
     marginTop: 24,
+    minHeight: 120,
     paddingHorizontal: 16,
     paddingVertical: 12,
     width: '100%',
@@ -693,6 +546,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 4,
+  },
+  transcriptInput: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    minHeight: 84,
   },
   ctaBar: {
     borderTopWidth: 0.5,

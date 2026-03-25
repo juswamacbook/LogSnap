@@ -1,22 +1,12 @@
 export type JobStatus =
-  | 'overdue'
-  | 'starting_soon'
+  | 'not_started'
   | 'in_progress'
-  | 'scheduled'
+  | 'awaiting_completion_upload'
   | 'completed';
 
-export type PhotoTag = 'Before' | 'During' | 'After';
-
-export type CapturedPhoto = {
+export type FinalPhoto = {
   uri: string;
-  tag: PhotoTag;
   timestamp: number;
-};
-
-export type ChecklistState = {
-  beforePhoto: boolean;
-  issueNoted: boolean;
-  afterPhoto: boolean;
 };
 
 export type Job = {
@@ -36,9 +26,8 @@ export type Job = {
 export type JobActivity = {
   startTime?: number;
   endTime?: number;
-  notes: string[];
-  photos: CapturedPhoto[];
-  checklistState: ChecklistState;
+  completionNote: string;
+  finalPhotos: FinalPhoto[];
   submittedAt?: number;
 };
 

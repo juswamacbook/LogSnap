@@ -1,221 +1,151 @@
 # LogSnap
 
-LogSnap is a mobile-first job logging assistant built for field workers (electricians, fire protection, technicians). It focuses on **passive job tracking and simple proof-of-work reports**, reducing manual input and allowing workers to focus on the job instead of paperwork.
-
----
+LogSnap is a mobile-first job logging assistant designed for field workers (electricians, fire protection, technicians). It simplifies job reporting by automatically capturing timestamps, location, and job activity, reducing manual input and improving accuracy.
 
 ## 🚀 Overview
 
-Field workers often spend unnecessary time manually logging:
+Field workers often spend extra time manually logging:
 - Start and end times  
-- Job details  
-- Photos of completed work  
+- Job descriptions  
+- Photos of work completed  
 
-LogSnap simplifies this into a **low-friction workflow**:
-
-> Tap once to start → do the work → tap once to finish → generate a report
-
-It is **not a replacement for tools like Jobber**, but a lightweight layer that makes reporting faster and easier.
-
----
+LogSnap streamlines this by turning job logging into a one-tap workflow, with optional automation based on location and time.
 
 ## ✨ Key Features
 
-### ▶️ One-Tap Job Tracking
-- Start a job with a single tap  
+### 📍 Smart Job Detection
+- Detects when a worker is near a job site (~50–100m radius)
+- Triggers a notification when a scheduled job is nearby
+- Prevents accidental triggers if not within range
+
+### ▶️ One-Tap Job Start
+- "Start Job" button when arriving on site
 - Automatically logs:
-  - Start time  
-  - Location (if enabled)  
-  - Job reference  
+  - Start time
+  - Location
+  - Job reference
 
----
+### 📸 Automatic Activity Logging
+- Capture photos during the job
+- Each photo is automatically timestamped and attached to the report
+- Reduces need for manual notes
 
-### ⏱️ Passive Work Session
-- Runs a live timer in the background  
-- Minimal interaction required during the job  
-- Keeps the experience lightweight and distraction-free  
+### ⏱️ Job Completion Tracking
+- "Complete Job" button to finish session
+- Logs:
+  - End time
+  - Duration
+  - Completion status
 
----
+### 📝 Report Generation
+- Auto-generates a structured job report including:
+  - Timeline (start → end)
+  - Photos
+  - Notes (optional)
+- Ready for submission to platforms like Jobber
 
-### 📸 Final Proof-of-Work Photos
-- Capture **1–3 photos after completing the job**  
-- Photos are timestamped and attached to the report  
-- Removes unnecessary before/during photo friction  
-
----
-
-### 🎤 Voice Notes (Optional)
-- Record quick voice notes during or after a job  
-- Supports fast, natural input without typing  
-- Can be included in the final report  
-
----
-
-### 📝 Simple Report Generation
-- Automatically generates a structured report including:
-  - Start time  
-  - End time  
-  - Duration  
-  - Location  
-  - Final photos  
-  - Optional notes / voice input  
-
-- Designed to be easily submitted to platforms like Jobber  
-
----
-
-### 📤 Submit to Jobber (Workflow Integration)
-- Dedicated submission screen  
-- Prepares job data for external tools  
-- Maintains compatibility with existing workflows  
-
----
-
-### 📍 Smart Job Detection (Planned / Optional)
-- Detect when a worker is near a job site (~50–100m radius)  
-- Trigger a notification when a scheduled job is nearby  
-- Helps reduce missed or forgotten job logs  
-
----
+### 🔔 Notifications (Optional)
+- Job start reminders
+- Missed job alerts
+- Progress check-ins
 
 ## 🧠 How It Works
 
 ### Current Workflow (Without LogSnap)
 1. Arrive at job site  
-2. Open Jobber  
+2. Manually open Jobber  
 3. Enter start time  
 4. Take photos manually  
 5. Write description  
 6. Enter end time  
 7. Submit report  
 
----
-
 ### LogSnap Workflow
-1. Open job and tap **Start Job**  
-2. Work normally (timer runs in background)  
-3. Tap **Finish Job**  
-4. Add final photos (and optional notes)  
-5. Generate report  
-6. Submit to Jobber  
-
----
+1. Worker approaches job site  
+2. Receives notification: "You're near your job"  
+3. Taps **Start Job**  
+4. Works normally (photos auto-logged)  
+5. Taps **Complete Job**  
+6. Report is generated automatically  
 
 ## 🛠️ Tech Stack (MVP)
 
-### Frontend
-- React Native (Expo)  
-- TypeScript  
+**Frontend**
+- React Native (Expo)
+- TypeScript
 
-### Backend
-- Node.js + Express  
-- REST API  
+**Backend**
+- Node.js + Express
+- REST API
 
-### Database (Planned)
-- PostgreSQL or MySQL  
+**Database**
+- PostgreSQL (or MySQL for early MVP)
 
-### Services
-- GPS / Geofencing APIs  
-- Cloud Storage (AWS S3 / Supabase)  
-- Push Notifications (Firebase)  
-
----
+**Services**
+- GPS / Geofencing APIs
+- Cloud Storage (AWS S3 / Supabase)
+- Push Notifications (Firebase)
 
 ## 📦 Project Structure
 LogSnap/
 ├── mobile/ # React Native app
-├── backend/ # Express API server
-├── database/ # Schema & migrations (planned)
-├── docs/ # Product + design notes
-├── src/
-│ ├── backend/ # In-memory backend (MVP)
-│ │ ├── server.ts
-│ │ ├── store.ts
-│ │ └── types.ts
-│ └── frontend/
-│ ├── ActiveJobScreen.tsx
-│ ├── JobDetailScreen.tsx
-│ ├── JobsListScreen.tsx
-│ ├── PhotoCaptureScreen.tsx
-│ └── SuccessScreen.tsx
-├── App.tsx
-├── index.js
-└── package.json
+├── backend/ # API server
+├── database/ # schema & migrations
+├── docs/ # product + design notes
+└── README.md
 
-
----
 
 ## 🔧 Setup (Development)
 
-### 1. Install dependencies
+### 1. Clone the repo
 ```bash
+git clone https://github.com/yourusername/logsnap.git
+cd logsnap
+```
+### 2. Install dependencies
+
 npm install
+cd src/backend && npm install
 
-### 2. Run the App
-npm start
-
-Clear cache if needed:
-npx expo start --clear
-
-###3. Run Backend
+### 3. Run the app
+# backend
 npm run backend
 
-Watch mode:
-npm run backend:dev
+# mobile
+npx expo start
 
-API Base URL
-http://localhost:4000
+### 🧪 MVP Testing Strategy
 
-Health Check
-curl http://localhost:4000/api/health
+To simulate real-world usage:
 
-🔌 API Endpoints
-GET /api/health
-GET /api/jobs
-GET /api/jobs/:jobId
-POST /api/jobs/:jobId/start
-POST /api/jobs/:jobId/note
-POST /api/jobs/:jobId/finish
-POST /api/jobs/:jobId/photos
-POST /api/jobs/:jobId/submit
+Mock job locations using GPS spoofing (Expo tools)
+Create test jobs with fixed coordinates
+Walk into radius → verify notification trigger
+Start + complete job → confirm report generation
+Validate timestamps and photo uploads
 
-🧪 MVP Notes
-Frontend currently uses mock data and local session state
-Backend uses an in-memory store (no persistent database yet)
-Screens are connected through a shared session workflow
-Reports are template-based (not AI-generated yet)
-Final photos are handled as a post-completion step only
+### ⚠️ Design Considerations
+False triggers: require both location and scheduled time
+User control: manual override always available
+Battery usage: optimize location polling
+Privacy: location tracking only during active jobs
 
-⚠️ Design Considerations
-Low friction first: minimize required inputs
-User control: manual overrides always available
-Battery usage: optimize location tracking
-Privacy: only track location during active jobs
-Reliability: ensure photos, notes, and sessions are not lost
+### 🎯 Vision
 
-🎯 Vision
+LogSnap is not trying to replace tools like Jobber. It enhances them.
 
-LogSnap is designed to:
+The goal is to:
 
 Remove friction from job reporting so workers can focus on the work itself.
 
-It complements existing tools by making job logging:
+### 📌 Future Improvements
+Direct integration with Jobber API
+Voice-to-text job notes
+AI-generated job summaries
+Offline mode for low-signal areas
+Team dashboards for managers
 
-faster
-simpler
-more consistent
-
-📌 Future Improvements
-Direct Jobber API integration
-Voice-to-text summaries
-AI-generated reports
-Offline mode
-Supervisor dashboards
-Smart automation (location + schedule-based triggers)
-
-👤 Author
-
+### 👤 Author
 Joshua Ranin
-Queen’s University — Computer Science
+Queen’s University – Computer Science
 Aspiring Software Engineer / Builder
-
